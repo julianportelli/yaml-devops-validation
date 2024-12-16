@@ -9,43 +9,43 @@ interface TaskInfo {
 }
 
 export default class AzurePipelinesTaskValidator {
-    private taskRegistry: TaskInfo[] = [];
+    private taskRegistryMap: Map<string, TaskInfo> = new Map();
     private outputChannel: vscode.OutputChannel;
     private diagnosticCollection: vscode.DiagnosticCollection;
+    private readonly CACHE_KEY = 'azurePipelinesTaskCache';
+    private readonly CACHE_TIMESTAMP_KEY = 'azurePipelinesTaskCacheTimestamp';
+    private readonly CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
     constructor(private context: vscode.ExtensionContext) {
         this.outputChannel = vscode.window.createOutputChannel('Azure Pipelines Task Validator');
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('azure-pipelines');
     }
 
-    public async initialize() {
-        try {
-            // Base URL for the Azure Pipelines tasks repository
-            const baseUrl = 'https://api.github.com/repos/microsoft/azure-pipelines-tasks/contents/Tasks';
+    private async loadCachedTasks(): Promise<boolean> {
+        const cachedTasks = this.context.globalState.get<{ [key: string]: TaskInfo }>(this.CACHE_KEY);
+        const cachedTimestamp = this.context.globalState.get<number>(this.CACHE_TIMESTAMP_KEY);
 
-            // Fetch the list of task directories
-            const taskDirs = await this.fetchTaskDirectories(baseUrl);
+        // Check if cache exists and is not expired
+        if (cachedTasks && cachedTimestamp &&
+            (Date.now() - cachedTimestamp) < this.CACHE_EXPIRY) {
 
-            // Fetch task information for each directory
-            for (const taskDir of taskDirs) {
-                try {
-                    await this.processTaskDirectory(taskDir);
-                } catch (error) {
-                    console.error(`Error processing task directory ${taskDir}:`, error);
-                }
-            }
+            // Populate the map from cached data
+            Object.entries(cachedTasks).forEach(([key, value]) => {
+                this.taskRegistryMap.set(key, value);
+            });
 
-            // Log the loaded tasks
-            this.logTaskRegistry();
-        } catch (error) {
-            vscode.window.showErrorMessage('Failed to initialize Azure Pipelines task validator');
-            console.error(error);
+            this.outputChannel.appendLine(`Loaded ${Object.keys(cachedTasks).length} tasks from cache`);
+            return true;
         }
+
+        return false;
     }
 
-    private async fetchTaskDirectories(url: string): Promise<string[]> {
+    private async fetchTaskDirectories(): Promise<string[]> {
+        const baseUrl = 'https://api.github.com/repos/microsoft/azure-pipelines-tasks/contents/Tasks';
+
         return new Promise((resolve, reject) => {
-            https.get(url, {
+            https.get(baseUrl, {
                 headers: {
                     'User-Agent': 'VSCode-AzurePipelinesExtension'
                 }
@@ -66,27 +66,21 @@ export default class AzurePipelinesTaskValidator {
         });
     }
 
-    private async processTaskDirectory(dirName: string): Promise<void> {
-        const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${dirName}/task.json`;
+    private async fetchTaskInfo(taskDir: string): Promise<TaskInfo | undefined> {
+        const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
 
         try {
             const taskJson = await this.fetchTaskJson(taskJsonUrl);
 
-            // Extract required inputs
-            const requiredInputs = taskJson.inputs
-                ?.filter((input: any) => input.required)
-                .map((input: any) => input.name) || [];
-
-            // Create fully qualified task name
-            const fullyQualifiedTaskName = `${taskJson.name}@${taskJson.version.Major}`;
-
-            // Add to task registry
-            this.taskRegistry.push({
-                fullyQualifiedTaskName,
-                requiredInputs
-            });
+            return {
+                fullyQualifiedTaskName: `${taskJson.name}@${taskJson.version.Major}`,
+                requiredInputs: taskJson.inputs
+                    ?.filter((input: any) => input.required)
+                    .map((input: any) => input.name) || []
+            };
         } catch (error) {
-            console.error(`Error fetching task.json for ${dirName}:`, error);
+            console.error(`Error fetching task.json for ${taskDir}:`, error);
+            return undefined;
         }
     }
 
@@ -106,15 +100,52 @@ export default class AzurePipelinesTaskValidator {
         });
     }
 
-    private logTaskRegistry() {
-        this.outputChannel.appendLine(`Total tasks loaded: ${this.taskRegistry.length}`);
-        this.taskRegistry.forEach(task => {
-            this.outputChannel.appendLine(`Task: ${task.fullyQualifiedTaskName}`);
-            this.outputChannel.appendLine(`  Required Inputs: ${task.requiredInputs.join(', ')}`);
+    private async getTaskInfo(taskName: string): Promise<TaskInfo | undefined> {
+        // First check if task is already in memory
+        const cachedTask = this.taskRegistryMap.get(taskName);
+        if (cachedTask) { return cachedTask; }
+
+        // If not in memory, try to fetch it
+        try {
+            const dirNameOfTask = taskName.replace("@", "V");
+            const taskInfo = await this.fetchTaskInfo(dirNameOfTask);
+            if (taskInfo) {
+                this.taskRegistryMap.set(taskName, taskInfo);
+                return taskInfo;
+            }
+        } catch (error) {
+            console.error(`Error fetching task info for ${taskName}:`, error);
+        }
+
+        return undefined;
+    }
+
+    public async activate(context: vscode.ExtensionContext) {
+        // Register validation on file open and save for Azure Pipelines YAML files
+        await this.loadCachedTasks();
+
+        const { onDidOpenTextDocument, onDidSaveTextDocument } = vscode.workspace;
+        const events = [onDidOpenTextDocument, onDidSaveTextDocument];
+
+        events.forEach(event => {
+            context.subscriptions.push(
+                event(async document => {
+                    if (this.isAzurePipelinesYaml(document)) {
+                        await this.validateYamlFile(document);
+                    }
+                })
+            );
+        });
+
+        // Validate existing open documents
+        vscode.workspace.textDocuments.forEach(async document => {
+            if (this.isAzurePipelinesYaml(document)) {
+                await this.validateYamlFile(document);
+            }
         });
     }
 
-    public validateYamlFile(document: vscode.TextDocument) {
+    public async validateYamlFile(document: vscode.TextDocument) {
         // Clear previous diagnostics
         this.diagnosticCollection.delete(document.uri);
 
@@ -123,22 +154,35 @@ export default class AzurePipelinesTaskValidator {
             const parsedYaml = yaml.parse(yamlContent);
             const diagnostics: vscode.Diagnostic[] = [];
 
-            this.validatePipelineTasks(parsedYaml, diagnostics, document);
+            const promise = await this.validatePipelineTasks(parsedYaml, diagnostics, document)
+                .then(() => {
 
-            // Set diagnostics for this document
-            this.diagnosticCollection.set(document.uri, diagnostics);
+                    diagnostics.push({
+                        range: new vscode.Range(
+                            new vscode.Position(0, 0),
+                            new vscode.Position(0, 10)
+                        ),
+                        message: "Test diagnostic",
+                        severity: vscode.DiagnosticSeverity.Error,
+                        source: "Test Source"
+                    });
+                    console.log("Diagnostics after test:", diagnostics);
+
+                    // Set diagnostics for this document
+                    this.diagnosticCollection.set(document.uri, diagnostics);
+                });
         } catch (error) {
             console.error('Error parsing YAML file:', error);
             vscode.window.showErrorMessage('Error parsing YAML file');
         }
     }
 
-    private validatePipelineTasks(
+    private async validatePipelineTasks(
         yamlContent: any,
         diagnostics: vscode.Diagnostic[],
         document: vscode.TextDocument
     ) {
-        const traverseAndValidate = (obj: any) => {
+        const traverseAndValidate = async (obj: any) => {
             if (typeof obj !== 'object' || obj === null) { return; }
 
             for (const [key, value] of Object.entries(obj)) {
@@ -146,12 +190,11 @@ export default class AzurePipelinesTaskValidator {
                     const fullTaskName = value as string;
                     const taskInputs = obj['inputs'] || {};
 
-                    // Find the task in our registry
-                    const taskInfo = this.taskRegistry.find(
-                        task => task.fullyQualifiedTaskName === fullTaskName
-                    );
+                    // Fetch task info with lazy loading
+                    const taskInfo = await this.getTaskInfo(fullTaskName);
 
                     if (taskInfo) {
+                        console.log("Retrieving task info for task named " + fullTaskName);
                         // Check for missing required inputs
                         for (const requiredInput of taskInfo.requiredInputs) {
                             if (!taskInputs[requiredInput]) {
@@ -178,14 +221,16 @@ export default class AzurePipelinesTaskValidator {
 
                 // Recursively traverse nested objects and arrays
                 if (Array.isArray(value)) {
-                    value.forEach(item => traverseAndValidate(item));
+                    for (const item of value) {
+                        await traverseAndValidate(item);
+                    }
                 } else if (typeof value === 'object') {
-                    traverseAndValidate(value);
+                    await traverseAndValidate(value);
                 }
             }
         };
 
-        traverseAndValidate(yamlContent);
+        await traverseAndValidate(yamlContent);
     }
 
     private findLineForTask(document: vscode.TextDocument, taskName: string): number {
@@ -196,32 +241,6 @@ export default class AzurePipelinesTaskValidator {
             }
         }
         return -1;
-    }
-
-    public activate(context: vscode.ExtensionContext) {
-        // Initialize task registry
-        this.initialize();
-
-        // Register validation on file open and save for Azure Pipelines YAML files
-        const { onDidOpenTextDocument, onDidSaveTextDocument, onDidChangeTextDocument } = vscode.workspace;
-        const events = [onDidOpenTextDocument, onDidSaveTextDocument];
-
-        events.forEach(event => {
-            context.subscriptions.push(
-                event(document => {
-                    if (this.isAzurePipelinesYaml(document)) {
-                        this.validateYamlFile(document);
-                    }
-                })
-            );
-        });
-
-        // Validate existing open documents
-        vscode.workspace.textDocuments.forEach(document => {
-            if (this.isAzurePipelinesYaml(document)) {
-                this.validateYamlFile(document);
-            }
-        });
     }
 
     private isAzurePipelinesYaml(document: vscode.TextDocument): boolean {

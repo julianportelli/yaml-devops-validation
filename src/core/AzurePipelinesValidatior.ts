@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as yaml from 'yaml';
 import * as https from 'https';
 import * as path from 'path';
+import { CustomDiagnosticResult, TaskCacheService, TaskFetchService } from '../types';
 
 interface TaskInfo {
     fullyQualifiedTaskName: string;
@@ -12,93 +13,38 @@ export default class AzurePipelinesTaskValidator {
     private taskRegistryMap: Map<string, TaskInfo> = new Map();
     private outputChannel: vscode.OutputChannel;
     private diagnosticCollection: vscode.DiagnosticCollection;
-    private readonly CACHE_KEY = 'azurePipelinesTaskCache';
-    private readonly CACHE_TIMESTAMP_KEY = 'azurePipelinesTaskCacheTimestamp';
-    private readonly CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
-    constructor(private context: vscode.ExtensionContext) {
+    constructor(
+        private taskCacheService: TaskCacheService,
+        private taskFetchService: TaskFetchService
+
+    ) {
         this.outputChannel = vscode.window.createOutputChannel('Azure Pipelines Task Validator');
         this.diagnosticCollection = vscode.languages.createDiagnosticCollection('azure-pipelines');
     }
 
-    private async loadCachedTasks(): Promise<boolean> {
-        const cachedTasks = this.context.globalState.get<{ [key: string]: TaskInfo }>(this.CACHE_KEY);
-        const cachedTimestamp = this.context.globalState.get<number>(this.CACHE_TIMESTAMP_KEY);
-
-        // Check if cache exists and is not expired
-        if (cachedTasks && cachedTimestamp &&
-            (Date.now() - cachedTimestamp) < this.CACHE_EXPIRY) {
-
-            // Populate the map from cached data
-            Object.entries(cachedTasks).forEach(([key, value]) => {
-                this.taskRegistryMap.set(key, value);
-            });
-
-            this.outputChannel.appendLine(`Loaded ${Object.keys(cachedTasks).length} tasks from cache`);
-            return true;
-        }
-
-        return false;
-    }
-
-    private async fetchTaskDirectories(): Promise<string[]> {
-        const baseUrl = 'https://api.github.com/repos/microsoft/azure-pipelines-tasks/contents/Tasks';
-
-        return new Promise((resolve, reject) => {
-            https.get(baseUrl, {
-                headers: {
-                    'User-Agent': 'VSCode-AzurePipelinesExtension'
-                }
-            }, (response) => {
-                let data = '';
-                response.on('data', chunk => { data += chunk; });
-                response.on('end', () => {
-                    try {
-                        const dirs = JSON.parse(data)
-                            .filter((item: any) => item.type === 'dir')
-                            .map((item: any) => item.name);
-                        resolve(dirs);
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            }).on('error', reject);
-        });
-    }
-
-    private async fetchTaskInfo(taskDir: string): Promise<TaskInfo | undefined> {
-        const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
-
-        try {
-            const taskJson = await this.fetchTaskJson(taskJsonUrl);
-
-            return {
-                fullyQualifiedTaskName: `${taskJson.name}@${taskJson.version.Major}`,
-                requiredInputs: taskJson.inputs
-                    ?.filter((input: any) => input.required)
-                    .map((input: any) => input.name) || []
-            };
-        } catch (error) {
-            console.error(`Error fetching task.json for ${taskDir}:`, error);
-            return undefined;
+    async initialize(): Promise<void> {
+        const cachedTasks = await this.taskCacheService.getCachedTasks();
+        if (cachedTasks) {
+            this.taskRegistryMap = cachedTasks;
         }
     }
 
-    private async fetchTaskJson(url: string): Promise<any> {
-        return new Promise((resolve, reject) => {
-            https.get(url, (response) => {
-                let data = '';
-                response.on('data', chunk => { data += chunk; });
-                response.on('end', () => {
-                    try {
-                        resolve(JSON.parse(data));
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            }).on('error', reject);
-        });
+    async validatePipelineContent(yamlContent: string): Promise<CustomDiagnosticResult[]> {
+        const diagnostics: CustomDiagnosticResult[] = [];
+        // try {
+        //     const parsedYaml = yaml.parse(yamlContent);
+        //     await this.validatePipelineTasks(parsedYaml, diagnostics);
+        // } catch (error) {
+        //     diagnostics.push({
+        //         line: 0,
+        //         message: 'Error parsing YAML file',
+        //         severity: 'error'
+        //     });
+        // }
+        return diagnostics;
     }
+
 
     private async getTaskInfo(taskName: string): Promise<TaskInfo | undefined> {
         // First check if task is already in memory
@@ -108,7 +54,7 @@ export default class AzurePipelinesTaskValidator {
         // If not in memory, try to fetch it
         try {
             const dirNameOfTask = taskName.replace("@", "V");
-            const taskInfo = await this.fetchTaskInfo(dirNameOfTask);
+            const taskInfo = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
             if (taskInfo) {
                 this.taskRegistryMap.set(taskName, taskInfo);
                 return taskInfo;
@@ -118,31 +64,6 @@ export default class AzurePipelinesTaskValidator {
         }
 
         return undefined;
-    }
-
-    public async activate(context: vscode.ExtensionContext) {
-        // Register validation on file open and save for Azure Pipelines YAML files
-        await this.loadCachedTasks();
-
-        const { onDidOpenTextDocument, onDidSaveTextDocument } = vscode.workspace;
-        const events = [onDidOpenTextDocument, onDidSaveTextDocument];
-
-        events.forEach(event => {
-            context.subscriptions.push(
-                event(async document => {
-                    if (this.isAzurePipelinesYaml(document)) {
-                        await this.validateYamlFile(document);
-                    }
-                })
-            );
-        });
-
-        // Validate existing open documents
-        vscode.workspace.textDocuments.forEach(async document => {
-            if (this.isAzurePipelinesYaml(document)) {
-                await this.validateYamlFile(document);
-            }
-        });
     }
 
     public async validateYamlFile(document: vscode.TextDocument) {

@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import { VSCodeTaskCacheService } from './services/VSCodeTaskCacheService';
 import { GitHubTaskFetchService } from './services/GitHubTaskFetchService';
 import AzurePipelinesTaskValidator from './core/AzurePipelinesValidatior';
-import { CustomDiagnosticResult } from './types';
 
 export class AzurePipelinesExtension {
     private validator: AzurePipelinesTaskValidator;
@@ -19,39 +18,24 @@ export class AzurePipelinesExtension {
         await this.validator.initialize();
 
         context.subscriptions.push(
-            vscode.workspace.onDidOpenTextDocument(this.validateDocument.bind(this)),
-            vscode.workspace.onDidSaveTextDocument(this.validateDocument.bind(this))
+            vscode.workspace.onDidOpenTextDocument(this.validateYAMLDocument.bind(this)),
+            vscode.workspace.onDidSaveTextDocument(this.validateYAMLDocument.bind(this))
         );
 
         // Validate existing open documents
-        vscode.workspace.textDocuments.forEach(this.validateDocument.bind(this));
+        vscode.workspace.textDocuments.forEach(this.validateYAMLDocument.bind(this));
     }
 
-    private async validateDocument(document: vscode.TextDocument) {
+    private async validateYAMLDocument(document: vscode.TextDocument) {
         if (!this.isAzurePipelinesYaml(document)) {
             return;
         }
 
-        const diagnostics = await this.validator.validatePipelineContent(document.getText());
-        this.updateDiagnostics(document.uri, diagnostics);
-    }
+        // Clear previous diagnostics
+        this.diagnosticCollection.delete(document.uri);
 
-    private updateDiagnostics(uri: vscode.Uri, results: CustomDiagnosticResult[]) {
-        const diagnostics = results.map(result => new vscode.Diagnostic(
-            new vscode.Range(result.line, 0, result.line, 100),
-            result.message,
-            this.mapSeverity(result.severity)
-        ));
-
-        this.diagnosticCollection.set(uri, diagnostics);
-    }
-
-    private mapSeverity(severity: string): vscode.DiagnosticSeverity {
-        switch (severity) {
-            case 'error': return vscode.DiagnosticSeverity.Error;
-            case 'warning': return vscode.DiagnosticSeverity.Warning;
-            default: return vscode.DiagnosticSeverity.Information;
-        }
+        const diagnostics = await this.validator.validatePipelineContent(document);
+        this.diagnosticCollection.set(document.uri, diagnostics);
     }
 
     private isAzurePipelinesYaml(document: vscode.TextDocument): boolean {

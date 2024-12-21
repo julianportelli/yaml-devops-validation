@@ -1,4 +1,3 @@
-"use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -7301,63 +7300,42 @@ var require_dist = __commonJS({
 // src/extension.ts
 var extension_exports = {};
 __export(extension_exports, {
-  activate: () => activate,
-  deactivate: () => deactivate
+  AzurePipelinesExtension: () => AzurePipelinesExtension
 });
 module.exports = __toCommonJS(extension_exports);
+var vscode2 = __toESM(require("vscode"));
 
-// src/BusinessLogic/AzurePipelinesValidatior.ts
-var vscode = __toESM(require("vscode"));
-var yaml = __toESM(require_dist());
-var https = __toESM(require("https"));
-var AzurePipelinesTaskValidator = class {
+// src/services/VSCodeTaskCacheService.ts
+var VSCodeTaskCacheService = class {
   // 24 hours
   constructor(context) {
     this.context = context;
-    this.outputChannel = vscode.window.createOutputChannel("Azure Pipelines Task Validator");
-    this.diagnosticCollection = vscode.languages.createDiagnosticCollection("azure-pipelines");
   }
-  taskRegistryMap = /* @__PURE__ */ new Map();
-  outputChannel;
-  diagnosticCollection;
   CACHE_KEY = "azurePipelinesTaskCache";
   CACHE_TIMESTAMP_KEY = "azurePipelinesTaskCacheTimestamp";
   CACHE_EXPIRY = 24 * 60 * 60 * 1e3;
-  async loadCachedTasks() {
+  async getCachedTasks() {
     const cachedTasks = this.context.globalState.get(this.CACHE_KEY);
     const cachedTimestamp = this.context.globalState.get(this.CACHE_TIMESTAMP_KEY);
     if (cachedTasks && cachedTimestamp && Date.now() - cachedTimestamp < this.CACHE_EXPIRY) {
+      const taskMap = /* @__PURE__ */ new Map();
       Object.entries(cachedTasks).forEach(([key, value]) => {
-        this.taskRegistryMap.set(key, value);
+        taskMap.set(key, value);
       });
-      this.outputChannel.appendLine(`Loaded ${Object.keys(cachedTasks).length} tasks from cache`);
-      return true;
+      return taskMap;
     }
-    return false;
+    return null;
   }
-  async fetchTaskDirectories() {
-    const baseUrl = "https://api.github.com/repos/microsoft/azure-pipelines-tasks/contents/Tasks";
-    return new Promise((resolve, reject) => {
-      https.get(baseUrl, {
-        headers: {
-          "User-Agent": "VSCode-AzurePipelinesExtension"
-        }
-      }, (response) => {
-        let data = "";
-        response.on("data", (chunk) => {
-          data += chunk;
-        });
-        response.on("end", () => {
-          try {
-            const dirs = JSON.parse(data).filter((item) => item.type === "dir").map((item) => item.name);
-            resolve(dirs);
-          } catch (error) {
-            reject(error);
-          }
-        });
-      }).on("error", reject);
-    });
+  async saveTasks(tasks) {
+    const tasksObject = Object.fromEntries(tasks);
+    await this.context.globalState.update(this.CACHE_KEY, tasksObject);
+    await this.context.globalState.update(this.CACHE_TIMESTAMP_KEY, Date.now());
   }
+};
+
+// src/services/GitHubTaskFetchService.ts
+var https = __toESM(require("https"));
+var GitHubTaskFetchService = class {
   async fetchTaskInfo(taskDir) {
     const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
     try {
@@ -7388,6 +7366,52 @@ var AzurePipelinesTaskValidator = class {
       }).on("error", reject);
     });
   }
+};
+
+// src/core/AzurePipelinesValidatior.ts
+var vscode = __toESM(require("vscode"));
+var yaml = __toESM(require_dist());
+var AzurePipelinesTaskValidator = class {
+  constructor(taskCacheService, taskFetchService) {
+    this.taskCacheService = taskCacheService;
+    this.taskFetchService = taskFetchService;
+    this.outputChannel = vscode.window.createOutputChannel("Azure Pipelines Task Validator");
+    this.diagnosticCollection = vscode.languages.createDiagnosticCollection("azure-pipelines");
+  }
+  taskRegistryMap = /* @__PURE__ */ new Map();
+  outputChannel;
+  diagnosticCollection;
+  async initialize() {
+    const cachedTasks = await this.taskCacheService.getCachedTasks();
+    if (cachedTasks) {
+      this.taskRegistryMap = cachedTasks;
+    }
+  }
+  async validatePipelineContent(document) {
+    const diagnostics = [];
+    try {
+      const yamlContent = document.getText();
+      const parsedYaml = yaml.parse(yamlContent);
+      diagnostics.push({
+        range: new vscode.Range(
+          new vscode.Position(0, 0),
+          new vscode.Position(0, 10)
+        ),
+        message: "Test diagnostic",
+        severity: vscode.DiagnosticSeverity.Error,
+        source: "Test Source"
+      });
+      await this.validatePipelineTasks(parsedYaml, diagnostics, document);
+    } catch (error) {
+      const range = new vscode.Range(0, 0, 0, 1);
+      diagnostics.push(new vscode.Diagnostic(
+        range,
+        `Error encountered while parsing ${document.fileName}: ${error}`,
+        vscode.DiagnosticSeverity.Error
+      ));
+    }
+    return diagnostics;
+  }
   async getTaskInfo(taskName) {
     const cachedTask = this.taskRegistryMap.get(taskName);
     if (cachedTask) {
@@ -7395,58 +7419,16 @@ var AzurePipelinesTaskValidator = class {
     }
     try {
       const dirNameOfTask = taskName.replace("@", "V");
-      const taskInfo = await this.fetchTaskInfo(dirNameOfTask);
+      const taskInfo = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
       if (taskInfo) {
         this.taskRegistryMap.set(taskName, taskInfo);
+        await this.taskCacheService.saveTasks(this.taskRegistryMap);
         return taskInfo;
       }
     } catch (error) {
       console.error(`Error fetching task info for ${taskName}:`, error);
     }
     return void 0;
-  }
-  async activate(context) {
-    await this.loadCachedTasks();
-    const { onDidOpenTextDocument, onDidSaveTextDocument } = vscode.workspace;
-    const events = [onDidOpenTextDocument, onDidSaveTextDocument];
-    events.forEach((event) => {
-      context.subscriptions.push(
-        event(async (document) => {
-          if (this.isAzurePipelinesYaml(document)) {
-            await this.validateYamlFile(document);
-          }
-        })
-      );
-    });
-    vscode.workspace.textDocuments.forEach(async (document) => {
-      if (this.isAzurePipelinesYaml(document)) {
-        await this.validateYamlFile(document);
-      }
-    });
-  }
-  async validateYamlFile(document) {
-    this.diagnosticCollection.delete(document.uri);
-    try {
-      const yamlContent = document.getText();
-      const parsedYaml = yaml.parse(yamlContent);
-      const diagnostics = [];
-      const promise = await this.validatePipelineTasks(parsedYaml, diagnostics, document).then(() => {
-        diagnostics.push({
-          range: new vscode.Range(
-            new vscode.Position(0, 0),
-            new vscode.Position(0, 10)
-          ),
-          message: "Test diagnostic",
-          severity: vscode.DiagnosticSeverity.Error,
-          source: "Test Source"
-        });
-        console.log("Diagnostics after test:", diagnostics);
-        this.diagnosticCollection.set(document.uri, diagnostics);
-      });
-    } catch (error) {
-      console.error("Error parsing YAML file:", error);
-      vscode.window.showErrorMessage("Error parsing YAML file");
-    }
   }
   async validatePipelineTasks(yamlContent, diagnostics, document) {
     const traverseAndValidate = async (obj) => {
@@ -7459,7 +7441,6 @@ var AzurePipelinesTaskValidator = class {
           const taskInputs = obj["inputs"] || {};
           const taskInfo = await this.getTaskInfo(fullTaskName);
           if (taskInfo) {
-            console.log("Retrieving task info for task named " + fullTaskName);
             for (const requiredInput of taskInfo.requiredInputs) {
               if (!taskInputs[requiredInput]) {
                 const lineIndex = this.findLineForTask(document, fullTaskName);
@@ -7499,21 +7480,40 @@ var AzurePipelinesTaskValidator = class {
     }
     return -1;
   }
+};
+
+// src/extension.ts
+var AzurePipelinesExtension = class {
+  validator;
+  diagnosticCollection;
+  constructor(context) {
+    const cacheService = new VSCodeTaskCacheService(context);
+    const fetchService = new GitHubTaskFetchService();
+    this.validator = new AzurePipelinesTaskValidator(cacheService, fetchService);
+    this.diagnosticCollection = vscode2.languages.createDiagnosticCollection("azure-pipelines");
+  }
+  async activate(context) {
+    await this.validator.initialize();
+    context.subscriptions.push(
+      vscode2.workspace.onDidOpenTextDocument(this.validateYAMLDocument.bind(this)),
+      vscode2.workspace.onDidSaveTextDocument(this.validateYAMLDocument.bind(this))
+    );
+    vscode2.workspace.textDocuments.forEach(this.validateYAMLDocument.bind(this));
+  }
+  async validateYAMLDocument(document) {
+    if (!this.isAzurePipelinesYaml(document)) {
+      return;
+    }
+    this.diagnosticCollection.delete(document.uri);
+    const diagnostics = await this.validator.validatePipelineContent(document);
+    this.diagnosticCollection.set(document.uri, diagnostics);
+  }
   isAzurePipelinesYaml(document) {
     return document.fileName.endsWith(".yml") || document.fileName.endsWith(".yaml");
   }
 };
-
-// src/extension.ts
-function activate(context) {
-  const validator = new AzurePipelinesTaskValidator(context);
-  validator.activate(context);
-}
-function deactivate() {
-}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  activate,
-  deactivate
+  AzurePipelinesExtension
 });
 //# sourceMappingURL=extension.js.map

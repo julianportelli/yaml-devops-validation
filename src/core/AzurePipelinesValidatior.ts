@@ -30,33 +30,54 @@ export default class AzurePipelinesTaskValidator {
         }
     }
 
-    async validatePipelineContent(yamlContent: string): Promise<CustomDiagnosticResult[]> {
-        const diagnostics: CustomDiagnosticResult[] = [];
-        // try {
-        //     const parsedYaml = yaml.parse(yamlContent);
-        //     await this.validatePipelineTasks(parsedYaml, diagnostics);
-        // } catch (error) {
-        //     diagnostics.push({
-        //         line: 0,
-        //         message: 'Error parsing YAML file',
-        //         severity: 'error'
-        //     });
-        // }
+    async validatePipelineContent(document: vscode.TextDocument): Promise<vscode.Diagnostic[]> {
+        const diagnostics: vscode.Diagnostic[] = [];
+        try {
+            const yamlContent = document.getText();
+            const parsedYaml = yaml.parse(yamlContent);
+
+            //Test code. To remove
+            diagnostics.push({
+                range: new vscode.Range(
+                    new vscode.Position(0, 0),
+                    new vscode.Position(0, 10)
+                ),
+                message: "Test diagnostic",
+                severity: vscode.DiagnosticSeverity.Error,
+                source: "Test Source"
+            });
+
+            await this.validatePipelineTasks(parsedYaml, diagnostics, document);
+        } catch (error) {
+            // Create diagnostic at the start of the document
+            const range = new vscode.Range(0, 0, 0, 1);
+            diagnostics.push(new vscode.Diagnostic(
+                range,
+                `Error encountered while parsing ${document.fileName}: ${error}`,
+                vscode.DiagnosticSeverity.Error
+            ));
+        }
+
         return diagnostics;
     }
 
-
     private async getTaskInfo(taskName: string): Promise<TaskInfo | undefined> {
         // First check if task is already in memory
-        const cachedTask = this.taskRegistryMap.get(taskName);
-        if (cachedTask) { return cachedTask; }
 
-        // If not in memory, try to fetch it
+        const cachedTask = this.taskRegistryMap.get(taskName);
+
+        if (cachedTask) {
+            return cachedTask;
+        }
+
+        // If not in memory, try to fetch it via HTTP
         try {
             const dirNameOfTask = taskName.replace("@", "V");
             const taskInfo = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
+
             if (taskInfo) {
                 this.taskRegistryMap.set(taskName, taskInfo);
+                await this.taskCacheService.saveTasks(this.taskRegistryMap);
                 return taskInfo;
             }
         } catch (error) {
@@ -64,38 +85,6 @@ export default class AzurePipelinesTaskValidator {
         }
 
         return undefined;
-    }
-
-    public async validateYamlFile(document: vscode.TextDocument) {
-        // Clear previous diagnostics
-        this.diagnosticCollection.delete(document.uri);
-
-        try {
-            const yamlContent = document.getText();
-            const parsedYaml = yaml.parse(yamlContent);
-            const diagnostics: vscode.Diagnostic[] = [];
-
-            const promise = await this.validatePipelineTasks(parsedYaml, diagnostics, document)
-                .then(() => {
-
-                    diagnostics.push({
-                        range: new vscode.Range(
-                            new vscode.Position(0, 0),
-                            new vscode.Position(0, 10)
-                        ),
-                        message: "Test diagnostic",
-                        severity: vscode.DiagnosticSeverity.Error,
-                        source: "Test Source"
-                    });
-                    console.log("Diagnostics after test:", diagnostics);
-
-                    // Set diagnostics for this document
-                    this.diagnosticCollection.set(document.uri, diagnostics);
-                });
-        } catch (error) {
-            console.error('Error parsing YAML file:', error);
-            vscode.window.showErrorMessage('Error parsing YAML file');
-        }
     }
 
     private async validatePipelineTasks(
@@ -115,7 +104,6 @@ export default class AzurePipelinesTaskValidator {
                     const taskInfo = await this.getTaskInfo(fullTaskName);
 
                     if (taskInfo) {
-                        console.log("Retrieving task info for task named " + fullTaskName);
                         // Check for missing required inputs
                         for (const requiredInput of taskInfo.requiredInputs) {
                             if (!taskInputs[requiredInput]) {
@@ -162,9 +150,5 @@ export default class AzurePipelinesTaskValidator {
             }
         }
         return -1;
-    }
-
-    private isAzurePipelinesYaml(document: vscode.TextDocument): boolean {
-        return (document.fileName.endsWith('.yml') || document.fileName.endsWith('.yaml'));
     }
 }

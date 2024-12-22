@@ -32,7 +32,7 @@ export class AzurePipelinesExtension {
         }
 
         // Clear previous diagnostics
-        // this.diagnosticCollection.delete(document.uri);
+        this.diagnosticCollection.delete(document.uri);
 
         const diagnostics = await this.validator.validatePipelineContent(document);
         this.diagnosticCollection.set(document.uri, diagnostics);

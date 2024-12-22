@@ -12,15 +12,13 @@ interface TaskInfo {
 export default class AzurePipelinesTaskValidator {
     private taskRegistryMap: Map<string, TaskInfo> = new Map();
     private outputChannel: vscode.OutputChannel;
-    private diagnosticCollection: vscode.DiagnosticCollection;
 
     constructor(
         private taskCacheService: TaskCacheService,
-        private taskFetchService: TaskFetchService
+        private taskFetchService: TaskFetchService,
 
     ) {
         this.outputChannel = vscode.window.createOutputChannel('Azure Pipelines Task Validator');
-        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('azure-pipelines');
     }
 
     async initialize(): Promise<void> {

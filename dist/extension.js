@@ -7300,75 +7300,12 @@ var require_dist = __commonJS({
 // src/extension.ts
 var extension_exports = {};
 __export(extension_exports, {
-  AzurePipelinesExtension: () => AzurePipelinesExtension
+  activate: () => activate,
+  deactivate: () => deactivate
 });
 module.exports = __toCommonJS(extension_exports);
-var vscode2 = __toESM(require("vscode"));
 
-// src/services/VSCodeTaskCacheService.ts
-var VSCodeTaskCacheService = class {
-  // 24 hours
-  constructor(context) {
-    this.context = context;
-  }
-  CACHE_KEY = "azurePipelinesTaskCache";
-  CACHE_TIMESTAMP_KEY = "azurePipelinesTaskCacheTimestamp";
-  CACHE_EXPIRY = 24 * 60 * 60 * 1e3;
-  async getCachedTasks() {
-    const cachedTasks = this.context.globalState.get(this.CACHE_KEY);
-    const cachedTimestamp = this.context.globalState.get(this.CACHE_TIMESTAMP_KEY);
-    if (cachedTasks && cachedTimestamp && Date.now() - cachedTimestamp < this.CACHE_EXPIRY) {
-      const taskMap = /* @__PURE__ */ new Map();
-      Object.entries(cachedTasks).forEach(([key, value]) => {
-        taskMap.set(key, value);
-      });
-      return taskMap;
-    }
-    return null;
-  }
-  async saveTasks(tasks) {
-    const tasksObject = Object.fromEntries(tasks);
-    await this.context.globalState.update(this.CACHE_KEY, tasksObject);
-    await this.context.globalState.update(this.CACHE_TIMESTAMP_KEY, Date.now());
-  }
-};
-
-// src/services/GitHubTaskFetchService.ts
-var https = __toESM(require("https"));
-var GitHubTaskFetchService = class {
-  async fetchTaskInfo(taskDir) {
-    const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
-    try {
-      const taskJson = await this.fetchTaskJson(taskJsonUrl);
-      return {
-        fullyQualifiedTaskName: `${taskJson.name}@${taskJson.version.Major}`,
-        requiredInputs: taskJson.inputs?.filter((input) => input.required).map((input) => input.name) || []
-      };
-    } catch (error) {
-      console.error(`Error fetching task.json for ${taskDir}:`, error);
-      return void 0;
-    }
-  }
-  async fetchTaskJson(url) {
-    return new Promise((resolve, reject) => {
-      https.get(url, (response) => {
-        let data = "";
-        response.on("data", (chunk) => {
-          data += chunk;
-        });
-        response.on("end", () => {
-          try {
-            resolve(JSON.parse(data));
-          } catch (error) {
-            reject(error);
-          }
-        });
-      }).on("error", reject);
-    });
-  }
-};
-
-// src/core/AzurePipelinesValidatior.ts
+// src/core/AzurePipelinesValidator.ts
 var vscode = __toESM(require("vscode"));
 var yaml = __toESM(require_dist());
 var AzurePipelinesTaskValidator = class {
@@ -7376,11 +7313,9 @@ var AzurePipelinesTaskValidator = class {
     this.taskCacheService = taskCacheService;
     this.taskFetchService = taskFetchService;
     this.outputChannel = vscode.window.createOutputChannel("Azure Pipelines Task Validator");
-    this.diagnosticCollection = vscode.languages.createDiagnosticCollection("azure-pipelines");
   }
   taskRegistryMap = /* @__PURE__ */ new Map();
   outputChannel;
-  diagnosticCollection;
   async initialize() {
     const cachedTasks = await this.taskCacheService.getCachedTasks();
     if (cachedTasks) {
@@ -7482,15 +7417,81 @@ var AzurePipelinesTaskValidator = class {
   }
 };
 
-// src/extension.ts
+// src/core/AzurePipelinesExtension.ts
+var vscode2 = __toESM(require("vscode"));
+
+// src/services/VSCodeTaskCacheService.ts
+var VSCodeTaskCacheService = class {
+  // 24 hours
+  constructor(context) {
+    this.context = context;
+  }
+  CACHE_KEY = "azurePipelinesTaskCache";
+  CACHE_TIMESTAMP_KEY = "azurePipelinesTaskCacheTimestamp";
+  CACHE_EXPIRY = 24 * 60 * 60 * 1e3;
+  async getCachedTasks() {
+    const cachedTasks = this.context.globalState.get(this.CACHE_KEY);
+    const cachedTimestamp = this.context.globalState.get(this.CACHE_TIMESTAMP_KEY);
+    if (cachedTasks && cachedTimestamp && Date.now() - cachedTimestamp < this.CACHE_EXPIRY) {
+      const taskMap = /* @__PURE__ */ new Map();
+      Object.entries(cachedTasks).forEach(([key, value]) => {
+        taskMap.set(key, value);
+      });
+      return taskMap;
+    }
+    return null;
+  }
+  async saveTasks(tasks) {
+    const tasksObject = Object.fromEntries(tasks);
+    await this.context.globalState.update(this.CACHE_KEY, tasksObject);
+    await this.context.globalState.update(this.CACHE_TIMESTAMP_KEY, Date.now());
+  }
+};
+
+// src/services/GitHubTaskFetchService.ts
+var https = __toESM(require("https"));
+var GitHubTaskFetchService = class {
+  async fetchTaskInfo(taskDir) {
+    const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
+    try {
+      const taskJson = await this.fetchTaskJson(taskJsonUrl);
+      return {
+        fullyQualifiedTaskName: `${taskJson.name}@${taskJson.version.Major}`,
+        requiredInputs: taskJson.inputs?.filter((input) => input.required).map((input) => input.name) || []
+      };
+    } catch (error) {
+      console.error(`Error fetching task.json for ${taskDir}:`, error);
+      return void 0;
+    }
+  }
+  async fetchTaskJson(url) {
+    return new Promise((resolve, reject) => {
+      https.get(url, (response) => {
+        let data = "";
+        response.on("data", (chunk) => {
+          data += chunk;
+        });
+        response.on("end", () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }).on("error", reject);
+    });
+  }
+};
+
+// src/core/AzurePipelinesExtension.ts
 var AzurePipelinesExtension = class {
   validator;
   diagnosticCollection;
   constructor(context) {
     const cacheService = new VSCodeTaskCacheService(context);
     const fetchService = new GitHubTaskFetchService();
-    this.validator = new AzurePipelinesTaskValidator(cacheService, fetchService);
     this.diagnosticCollection = vscode2.languages.createDiagnosticCollection("azure-pipelines");
+    this.validator = new AzurePipelinesTaskValidator(cacheService, fetchService);
   }
   async activate(context) {
     await this.validator.initialize();
@@ -7504,7 +7505,6 @@ var AzurePipelinesExtension = class {
     if (!this.isAzurePipelinesYaml(document)) {
       return;
     }
-    this.diagnosticCollection.delete(document.uri);
     const diagnostics = await this.validator.validatePipelineContent(document);
     this.diagnosticCollection.set(document.uri, diagnostics);
   }
@@ -7512,8 +7512,17 @@ var AzurePipelinesExtension = class {
     return document.fileName.endsWith(".yml") || document.fileName.endsWith(".yaml");
   }
 };
+
+// src/extension.ts
+function activate(context) {
+  const extension = new AzurePipelinesExtension(context);
+  return extension.activate(context);
+}
+function deactivate() {
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
-  AzurePipelinesExtension
+  activate,
+  deactivate
 });
 //# sourceMappingURL=extension.js.map

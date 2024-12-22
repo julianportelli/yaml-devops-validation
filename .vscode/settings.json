@@ -6,8 +6,16 @@
     },
     "search.exclude": {
         "out": true, // set this to false to include "out" folder in search results
-        "dist": true // set this to false to include "dist" folder in search results
+        "dist": true, // set this to false to include "dist" folder in search results
+        "pnpm-lock.yaml": true, // Avoid polluting search results with lockfile content
     },
     // Turn off tsc task auto detection since we have the necessary tasks as npm scripts
-    "typescript.tsc.autoDetect": "off"
+    "typescript.tsc.autoDetect": "off",
+    // Ensure VSCode uses pnpm instead of npm
+    "eslint.packageManager": "pnpm",
+    "npm.packageManager": "pnpm",
+// For those using file-nesting, nest the new files. E.g.:
+    "explorer.fileNesting.patterns":{
+  "package.json": "pnpm-workspace.yaml, pnpm-lock.yaml"
+    }
 }

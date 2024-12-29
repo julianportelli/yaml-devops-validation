@@ -1,3 +1,4 @@
+"use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -7312,10 +7313,9 @@ var AzurePipelinesTaskValidator = class {
   constructor(taskCacheService, taskFetchService) {
     this.taskCacheService = taskCacheService;
     this.taskFetchService = taskFetchService;
+    this.taskRegistryMap = /* @__PURE__ */ new Map();
     this.outputChannel = vscode.window.createOutputChannel("Azure Pipelines Task Validator");
   }
-  taskRegistryMap = /* @__PURE__ */ new Map();
-  outputChannel;
   async initialize() {
     const cachedTasks = await this.taskCacheService.getCachedTasks();
     if (cachedTasks) {
@@ -7425,10 +7425,10 @@ var VSCodeTaskCacheService = class {
   // 24 hours
   constructor(context) {
     this.context = context;
+    this.CACHE_KEY = "azurePipelinesTaskCache";
+    this.CACHE_TIMESTAMP_KEY = "azurePipelinesTaskCacheTimestamp";
+    this.CACHE_EXPIRY = 24 * 60 * 60 * 1e3;
   }
-  CACHE_KEY = "azurePipelinesTaskCache";
-  CACHE_TIMESTAMP_KEY = "azurePipelinesTaskCacheTimestamp";
-  CACHE_EXPIRY = 24 * 60 * 60 * 1e3;
   async getCachedTasks() {
     const cachedTasks = this.context.globalState.get(this.CACHE_KEY);
     const cachedTimestamp = this.context.globalState.get(this.CACHE_TIMESTAMP_KEY);
@@ -7485,8 +7485,6 @@ var GitHubTaskFetchService = class {
 
 // src/core/AzurePipelinesExtension.ts
 var AzurePipelinesExtension = class {
-  validator;
-  diagnosticCollection;
   constructor(context) {
     const cacheService = new VSCodeTaskCacheService(context);
     const fetchService = new GitHubTaskFetchService();

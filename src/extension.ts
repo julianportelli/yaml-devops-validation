@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import AzurePipelinesValidator from './BusinessLogic/AzurePipelinesValidatior';
+import { AzurePipelinesExtension } from './core/AzurePipelinesExtension';
 
 export function activate(context: vscode.ExtensionContext) {
-	const validator = new AzurePipelinesValidator(context);
-	validator.activate(context);
+    const extension = new AzurePipelinesExtension(context);
+    return extension.activate(context);
 }
 
 export function deactivate() { }

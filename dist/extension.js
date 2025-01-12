@@ -7327,15 +7327,6 @@ var AzurePipelinesTaskValidator = class {
     try {
       const yamlContent = document.getText();
       const parsedYaml = yaml.parse(yamlContent);
-      diagnostics.push({
-        range: new vscode.Range(
-          new vscode.Position(0, 0),
-          new vscode.Position(0, 10)
-        ),
-        message: "Test diagnostic",
-        severity: vscode.DiagnosticSeverity.Error,
-        source: "Test Source"
-      });
       await this.validatePipelineTasks(parsedYaml, diagnostics, document);
     } catch (error) {
       const range = new vscode.Range(0, 0, 0, 1);

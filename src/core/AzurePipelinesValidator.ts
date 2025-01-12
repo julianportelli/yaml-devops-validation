@@ -1,8 +1,6 @@
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
-import * as https from 'https';
-import * as path from 'path';
-import { CustomDiagnosticResult, TaskCacheService, TaskFetchService } from '../types';
+import { TaskCacheService, TaskFetchService } from '../types';
 
 interface TaskInfo {
     fullyQualifiedTaskName: string;
@@ -34,17 +32,6 @@ export default class AzurePipelinesTaskValidator {
             const yamlContent = document.getText();
             const parsedYaml = yaml.parse(yamlContent);
 
-            //Test code. To remove
-            diagnostics.push({
-                range: new vscode.Range(
-                    new vscode.Position(0, 0),
-                    new vscode.Position(0, 10)
-                ),
-                message: "Test diagnostic",
-                severity: vscode.DiagnosticSeverity.Error,
-                source: "Test Source"
-            });
-
             await this.validatePipelineTasks(parsedYaml, diagnostics, document);
         } catch (error) {
             // Create diagnostic at the start of the document
@@ -61,7 +48,6 @@ export default class AzurePipelinesTaskValidator {
 
     private async getTaskInfo(taskName: string): Promise<TaskInfo | undefined> {
         // First check if task is already in memory
-
         const cachedTask = this.taskRegistryMap.get(taskName);
 
         if (cachedTask) {

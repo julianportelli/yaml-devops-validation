@@ -1,6 +1,20 @@
-export interface TaskInfo {
+import {AzurePipelinesTaskObject}  from './AzurePipelinesTask';
+
+export class Dictionary<T> extends Map<string, T> {
+    constructor(entries?: readonly (readonly [string, T])[] | null) {
+        super(entries);
+    }
+}
+export class TaskInfo {
     fullyQualifiedTaskName: string;
-    requiredInputs: string[];
+    requiredInputsNames: string[];
+    azurePipelineTaskObject: AzurePipelinesTaskObject;
+    
+    constructor(FullyQualifiedTaskName: string, RequiredInputs: string[], AzurePipelinesTaskObj: AzurePipelinesTaskObject){
+        this.fullyQualifiedTaskName = FullyQualifiedTaskName;
+        this.requiredInputsNames = RequiredInputs;
+        this.azurePipelineTaskObject = AzurePipelinesTaskObj;
+    }
 }
 
 export interface TaskCacheService {
@@ -17,3 +31,5 @@ export interface CustomDiagnosticResult {
     message: string;
     severity: 'error' | 'warning' | 'info';
 }
+
+export { AzurePipelinesTaskObject };

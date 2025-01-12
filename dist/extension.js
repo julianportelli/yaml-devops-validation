@@ -7367,7 +7367,7 @@ var AzurePipelinesTaskValidator = class {
           const taskInputs = obj["inputs"] || {};
           const taskInfo = await this.getTaskInfo(fullTaskName);
           if (taskInfo) {
-            for (const requiredInput of taskInfo.requiredInputs) {
+            for (const requiredInput of taskInfo.requiredInputsNames) {
               if (!taskInputs[requiredInput]) {
                 const lineIndex = this.findLineForTask(document, fullTaskName);
                 if (lineIndex !== -1) {
@@ -7441,15 +7441,30 @@ var VSCodeTaskCacheService = class {
 
 // src/services/GitHubTaskFetchService.ts
 var https = __toESM(require("https"));
+
+// src/types/index.ts
+var TaskInfo = class {
+  constructor(FullyQualifiedTaskName, RequiredInputs, AzurePipelinesTaskObj) {
+    this.fullyQualifiedTaskName = FullyQualifiedTaskName;
+    this.requiredInputsNames = RequiredInputs;
+    this.azurePipelineTaskObject = AzurePipelinesTaskObj;
+  }
+};
+
+// src/services/GitHubTaskFetchService.ts
 var GitHubTaskFetchService = class {
   async fetchTaskInfo(taskDir) {
     const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
     try {
       const taskJson = await this.fetchTaskJson(taskJsonUrl);
-      return {
-        fullyQualifiedTaskName: `${taskJson.name}@${taskJson.version.Major}`,
-        requiredInputs: taskJson.inputs?.filter((input) => input.required).map((input) => input.name) || []
-      };
+      const fullyQualifiedTaskName = `${taskJson.name}@${taskJson.version.Major}`;
+      const requiredInputsNames = taskJson.inputs?.filter((input) => input.required).map((input) => input.name) || [];
+      const taskInfo = new TaskInfo(
+        fullyQualifiedTaskName,
+        requiredInputsNames,
+        taskJson
+      );
+      return taskInfo;
     } catch (error) {
       console.error(`Error fetching task.json for ${taskDir}:`, error);
       return void 0;

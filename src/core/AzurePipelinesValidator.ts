@@ -1,11 +1,6 @@
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
-import { TaskCacheService, TaskFetchService } from '../types';
-
-interface TaskInfo {
-    fullyQualifiedTaskName: string;
-    requiredInputs: string[];
-}
+import { TaskCacheService, TaskFetchService, type TaskInfo } from '../types';
 
 export default class AzurePipelinesTaskValidator {
     private taskRegistryMap: Map<string, TaskInfo> = new Map();
@@ -89,7 +84,7 @@ export default class AzurePipelinesTaskValidator {
 
                     if (taskInfo) {
                         // Check for missing required inputs
-                        for (const requiredInput of taskInfo.requiredInputs) {
+                        for (const requiredInput of taskInfo.requiredInputsNames) {
                             if (!taskInputs[requiredInput]) {
                                 // Find the line for this task
                                 const lineIndex = this.findLineForTask(document, fullTaskName);

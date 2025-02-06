@@ -181,9 +181,9 @@ export default class AzurePipelinesTaskValidator {
                 //Parse visible rule value
                 const isRuleSatisfied = AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml);
                 
-                if(!isRuleSatisfied){
+                if(isRuleSatisfied){
                     validationResult = {
-                        message: `Required input '${requiredInputName}' for task '${fullTaskName}' must satisfy the rule \'${visibleRule}\'`,
+                        message: `Since the rule \'${visibleRule}\' has been satisfied, the input '${requiredInputName}' is required for task ${fullTaskName}`,
                         severity: vscode.DiagnosticSeverity.Error
                     };
                 }

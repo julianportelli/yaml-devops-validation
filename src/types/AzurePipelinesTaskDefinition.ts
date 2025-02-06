@@ -29,7 +29,7 @@ export type TaskInput = {
 
 export type Execution = Dictionary<Dictionary<string>>
 
-export class AzurePipelinesTaskObject {
+export class AzurePipelinesTaskDefinition {
     id: string;
     name: string;
     friendlyName: string;
@@ -50,7 +50,9 @@ export class AzurePipelinesTaskObject {
     execution: Execution;
     messages: Record<string, string>;
 
-    constructor(data: Omit<AzurePipelinesTaskObject, never>) {
+    constructor(
+        data: any
+    ) {
         this.id = data.id;
         this.name = data.name;
         this.friendlyName = data.friendlyName;
@@ -72,7 +74,7 @@ export class AzurePipelinesTaskObject {
         this.messages = data.messages;
     }
 
-    getInput(name: string): TaskInput | undefined {
+    getInputDefinition(name: string): TaskInput | undefined {
         return this.inputs.find(input => input.name === name);
     }
 

@@ -1,10 +1,14 @@
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
-import { TaskCacheService, TaskFetchService, type TaskInfo } from '../types';
+import { TaskCacheService, TaskFetchService, type Dictionary, type InputValidationResult, type Nullable, type TaskInfo, type TaskInputObjectType } from '../types';
+import { AzurePipelinesTaskDefinition, type TaskInput } from '../types/AzurePipelinesTaskDefinition';
+import {AdvancedVisibilityRuleParser } from '../services/AdvancedVisibilityRuleParser';
 
 export default class AzurePipelinesTaskValidator {
     private taskRegistryMap: Map<string, TaskInfo> = new Map();
     private outputChannel: vscode.OutputChannel;
+
+    private readonly diagnosticSource = 'Azure Pipelines Task Validator';
 
     constructor(
         private taskCacheService: TaskCacheService,
@@ -42,28 +46,45 @@ export default class AzurePipelinesTaskValidator {
     }
 
     private async getTaskInfo(taskName: string): Promise<TaskInfo | undefined> {
+        var resultTaskInfo : TaskInfo | undefined = undefined;
+        
         // First check if task is already in memory
-        const cachedTask = this.taskRegistryMap.get(taskName);
+        let cachedTask = this.taskRegistryMap.get(taskName);
+        // cachedTask = undefined;
 
         if (cachedTask) {
-            return cachedTask;
+            cachedTask = this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(cachedTask);
+            
+            resultTaskInfo = cachedTask;
         }
-
+        else{
         // If not in memory, try to fetch it via HTTP
         try {
             const dirNameOfTask = taskName.replace("@", "V");
-            const taskInfo = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
+            let taskInfoRetrievedViaHTTP = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
 
-            if (taskInfo) {
-                this.taskRegistryMap.set(taskName, taskInfo);
+            if (taskInfoRetrievedViaHTTP) {
+                // Ensure azurePipelineTaskDefinition is an instance of AzurePipelinesTaskDefinition
+                taskInfoRetrievedViaHTTP = this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfoRetrievedViaHTTP);
+                this.taskRegistryMap.set(taskName, taskInfoRetrievedViaHTTP);
                 await this.taskCacheService.saveTasks(this.taskRegistryMap);
-                return taskInfo;
+                return taskInfoRetrievedViaHTTP;
             }
         } catch (error) {
             console.error(`Error fetching task info for ${taskName}:`, error);
         }
+        }
 
-        return undefined;
+
+        return resultTaskInfo;
+    }
+
+    private ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfo: TaskInfo) {
+        if (!(taskInfo.azurePipelineTaskDefinition instanceof AzurePipelinesTaskDefinition)) {
+            taskInfo.azurePipelineTaskDefinition = new AzurePipelinesTaskDefinition(taskInfo.azurePipelineTaskDefinition);
+        }
+        
+        return taskInfo;
     }
 
     private async validatePipelineTasks(
@@ -77,32 +98,32 @@ export default class AzurePipelinesTaskValidator {
             for (const [key, value] of Object.entries(obj)) {
                 if (key === 'task') {
                     const fullTaskName = value as string;
-                    const taskInputs = obj['inputs'] || {};
+                    const taskInputsInYaml : TaskInputObjectType  = obj['inputs'] || {};
 
                     // Fetch task info with lazy loading
                     const taskInfo = await this.getTaskInfo(fullTaskName);
 
                     if (taskInfo) {
                         // Check for missing required inputs
-                        for (const requiredInput of taskInfo.requiredInputsNames) {
-                            if (!taskInputs[requiredInput]) {
-                                // Find the line for this task
+                        for (const requiredInputName of taskInfo.requiredInputsNames) {
+                            const validationResult = this.validateRequiredInput(fullTaskName, requiredInputName, taskInputsInYaml, taskInfo.azurePipelineTaskDefinition);
+                            
+                            if(validationResult){
                                 const lineIndex = this.findLineForTask(document, fullTaskName);
-
-                                if (lineIndex !== -1) {
-                                    const range = new vscode.Range(
-                                        new vscode.Position(lineIndex, 0),
-                                        new vscode.Position(lineIndex, 100)
-                                    );
-
-                                    diagnostics.push({
-                                        range,
-                                        message: `Required input '${requiredInput}' is missing for task '${fullTaskName}'`,
-                                        severity: vscode.DiagnosticSeverity.Error,
-                                        source: 'Azure Pipelines Task Validator'
-                                    });
-                                }
+                                
+                                this.addDiagnostic(diagnostics, lineIndex, validationResult.message, validationResult.severity);
                             }
+                            
+                            // if (!taskInputsInYaml[requiredInputName]) {
+                            //     // Find the line for this task
+                            //     const lineIndex = this.findLineForTask(document, fullTaskName);
+
+                            //     if (lineIndex !== -1) {                                    
+                            //         const message = `Required input '${requiredInputName}' is missing for task '${fullTaskName}'`;
+                                    
+                            //         this.addDiagnostic(diagnostics, lineIndex, message, vscode.DiagnosticSeverity.Error);
+                            //     }
+                            // }
                         }
                     }
                 }
@@ -129,5 +150,53 @@ export default class AzurePipelinesTaskValidator {
             }
         }
         return -1;
+    }
+    
+    private addDiagnostic(diags: vscode.Diagnostic[], lineIndex: number, message: string, severity: vscode.DiagnosticSeverity){
+        const range = new vscode.Range(
+            new vscode.Position(lineIndex, 0),
+            new vscode.Position(lineIndex, 100)
+        );
+        
+        diags.push({
+            range,
+            message: message,
+            severity: severity,
+            source: this.diagnosticSource
+        });
+    }
+    
+    
+    private validateRequiredInput(fullTaskName:string, requiredInputName: string, taskInputsInYaml : TaskInputObjectType, taskDefinition: AzurePipelinesTaskDefinition) : Nullable<InputValidationResult> {
+        var validationResult: Nullable<InputValidationResult> = null;
+        
+        //If required input is not present in the inputs property in the YAML task defined in the YAML file
+        if (!taskInputsInYaml[requiredInputName]){
+            //Check if this is actually required by checking the 'visibleRule' property            
+            const reqPropertyInputDefinition = taskDefinition.getInputDefinition(requiredInputName);
+            
+            const visibleRule = reqPropertyInputDefinition?.visibleRule;
+            
+            if(!!visibleRule){
+                //Parse visible rule value
+                const isRuleSatisfied = AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml);
+                
+                if(!isRuleSatisfied){
+                    validationResult = {
+                        message: `Required input '${requiredInputName}' for task '${fullTaskName}' must satisfy the rule \'${visibleRule}\'`,
+                        severity: vscode.DiagnosticSeverity.Error
+                    };
+                }
+            }
+            else{
+                validationResult = {
+                    message: `Required input '${requiredInputName}' is missing for task '${fullTaskName}'`,
+                    severity: vscode.DiagnosticSeverity.Error
+                };
+            }
+
+        }
+        
+        return validationResult;
     }
 }

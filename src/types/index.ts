@@ -1,4 +1,5 @@
-import {AzurePipelinesTaskObject}  from './AzurePipelinesTask';
+import {AzurePipelinesTaskDefinition}  from './AzurePipelinesTaskDefinition';
+import * as vscode from 'vscode';
 
 export class Dictionary<T> extends Map<string, T> {
     constructor(entries?: readonly (readonly [string, T])[] | null) {
@@ -8,12 +9,12 @@ export class Dictionary<T> extends Map<string, T> {
 export class TaskInfo {
     fullyQualifiedTaskName: string;
     requiredInputsNames: string[];
-    azurePipelineTaskObject: AzurePipelinesTaskObject;
+    azurePipelineTaskDefinition: AzurePipelinesTaskDefinition;
     
-    constructor(FullyQualifiedTaskName: string, RequiredInputs: string[], AzurePipelinesTaskObj: AzurePipelinesTaskObject){
+    constructor(FullyQualifiedTaskName: string, RequiredInputs: string[], AzurePipelinesTaskObj: AzurePipelinesTaskDefinition){
         this.fullyQualifiedTaskName = FullyQualifiedTaskName;
         this.requiredInputsNames = RequiredInputs;
-        this.azurePipelineTaskObject = AzurePipelinesTaskObj;
+        this.azurePipelineTaskDefinition = AzurePipelinesTaskObj;
     }
 }
 
@@ -32,4 +33,13 @@ export interface CustomDiagnosticResult {
     severity: 'error' | 'warning' | 'info';
 }
 
-export { AzurePipelinesTaskObject };
+export type InputValidationResult = {
+    message: string,
+    severity: vscode.DiagnosticSeverity
+}
+
+export type Nullable<T> = T | null;
+
+export type TaskInputObjectValueType = string | number
+
+export type TaskInputObjectType = Record<string, TaskInputObjectValueType>

@@ -7309,11 +7309,83 @@ module.exports = __toCommonJS(extension_exports);
 // src/core/AzurePipelinesValidator.ts
 var vscode = __toESM(require("vscode"));
 var yaml = __toESM(require_dist());
+
+// src/types/AzurePipelinesTaskDefinition.ts
+var AzurePipelinesTaskDefinition = class {
+  constructor(data) {
+    this.id = data.id;
+    this.name = data.name;
+    this.friendlyName = data.friendlyName;
+    this.description = data.description;
+    this.helpUrl = data.helpUrl;
+    this.helpMarkDown = data.helpMarkDown;
+    this.category = data.category;
+    this.visibility = data.visibility;
+    this.runsOn = data.runsOn;
+    this.author = data.author;
+    this.version = data.version;
+    this.releaseNotes = data.releaseNotes;
+    this.minimumAgentVersion = data.minimumAgentVersion;
+    this.showEnvironmentVariables = data.showEnvironmentVariables;
+    this.groups = data.groups;
+    this.inputs = data.inputs;
+    this.instanceNameFormat = data.instanceNameFormat;
+    this.execution = data.execution;
+    this.messages = data.messages;
+  }
+  getInputDefinition(name) {
+    return this.inputs.find((input) => input.name === name);
+  }
+  getFullVersionString() {
+    return `${this.version.Major}.${this.version.Minor}.${this.version.Patch}`;
+  }
+};
+
+// src/services/AdvancedVisibilityRuleParser.ts
+var AdvancedVisibilityRuleParser = class {
+  static parseRule(rule) {
+    if (!rule) {
+      return [];
+    }
+    ;
+    const orGroups = rule.split("||").map((group) => group.trim());
+    return orGroups.map((group) => {
+      const andConditions = group.split("&&").map((part) => part.trim());
+      return andConditions.map((condition) => {
+        const [field, op, value] = condition.trim().split(" ");
+        return {
+          field: field.trim(),
+          operator: op,
+          value: value.trim()
+        };
+      });
+    });
+  }
+  static evaluate(rule, values2) {
+    if (!rule) {
+      return true;
+    }
+    const conditionGroups = this.parseRule(rule);
+    return conditionGroups.some((andGroup) => {
+      return andGroup.every((condition) => {
+        const actualValue = values2[condition.field];
+        return actualValue === condition.value;
+      });
+    });
+  }
+};
+var complexRule = "command = install && type = npm || command = ci";
+var values = { command: "install", type: "npm" };
+var isVisible = AdvancedVisibilityRuleParser.evaluate(complexRule, values);
+console.log(isVisible);
+
+// src/core/AzurePipelinesValidator.ts
 var AzurePipelinesTaskValidator = class {
   constructor(taskCacheService, taskFetchService) {
     this.taskCacheService = taskCacheService;
     this.taskFetchService = taskFetchService;
     this.taskRegistryMap = /* @__PURE__ */ new Map();
+    this.diagnosticSource = "Azure Pipelines Task Validator";
     this.outputChannel = vscode.window.createOutputChannel("Azure Pipelines Task Validator");
   }
   async initialize() {
@@ -7339,22 +7411,32 @@ var AzurePipelinesTaskValidator = class {
     return diagnostics;
   }
   async getTaskInfo(taskName) {
-    const cachedTask = this.taskRegistryMap.get(taskName);
+    var resultTaskInfo = void 0;
+    let cachedTask = this.taskRegistryMap.get(taskName);
     if (cachedTask) {
-      return cachedTask;
-    }
-    try {
-      const dirNameOfTask = taskName.replace("@", "V");
-      const taskInfo = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
-      if (taskInfo) {
-        this.taskRegistryMap.set(taskName, taskInfo);
-        await this.taskCacheService.saveTasks(this.taskRegistryMap);
-        return taskInfo;
+      cachedTask = this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(cachedTask);
+      resultTaskInfo = cachedTask;
+    } else {
+      try {
+        const dirNameOfTask = taskName.replace("@", "V");
+        let taskInfoRetrievedViaHTTP = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
+        if (taskInfoRetrievedViaHTTP) {
+          taskInfoRetrievedViaHTTP = this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfoRetrievedViaHTTP);
+          this.taskRegistryMap.set(taskName, taskInfoRetrievedViaHTTP);
+          await this.taskCacheService.saveTasks(this.taskRegistryMap);
+          return taskInfoRetrievedViaHTTP;
+        }
+      } catch (error) {
+        console.error(`Error fetching task info for ${taskName}:`, error);
       }
-    } catch (error) {
-      console.error(`Error fetching task info for ${taskName}:`, error);
     }
-    return void 0;
+    return resultTaskInfo;
+  }
+  ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfo) {
+    if (!(taskInfo.azurePipelineTaskDefinition instanceof AzurePipelinesTaskDefinition)) {
+      taskInfo.azurePipelineTaskDefinition = new AzurePipelinesTaskDefinition(taskInfo.azurePipelineTaskDefinition);
+    }
+    return taskInfo;
   }
   async validatePipelineTasks(yamlContent, diagnostics, document) {
     const traverseAndValidate = async (obj) => {
@@ -7364,24 +7446,14 @@ var AzurePipelinesTaskValidator = class {
       for (const [key, value] of Object.entries(obj)) {
         if (key === "task") {
           const fullTaskName = value;
-          const taskInputs = obj["inputs"] || {};
+          const taskInputsInYaml = obj["inputs"] || {};
           const taskInfo = await this.getTaskInfo(fullTaskName);
           if (taskInfo) {
-            for (const requiredInput of taskInfo.requiredInputsNames) {
-              if (!taskInputs[requiredInput]) {
+            for (const requiredInputName of taskInfo.requiredInputsNames) {
+              const validationResult = this.validateRequiredInput(fullTaskName, requiredInputName, taskInputsInYaml, taskInfo.azurePipelineTaskDefinition);
+              if (validationResult) {
                 const lineIndex = this.findLineForTask(document, fullTaskName);
-                if (lineIndex !== -1) {
-                  const range = new vscode.Range(
-                    new vscode.Position(lineIndex, 0),
-                    new vscode.Position(lineIndex, 100)
-                  );
-                  diagnostics.push({
-                    range,
-                    message: `Required input '${requiredInput}' is missing for task '${fullTaskName}'`,
-                    severity: vscode.DiagnosticSeverity.Error,
-                    source: "Azure Pipelines Task Validator"
-                  });
-                }
+                this.addDiagnostic(diagnostics, lineIndex, validationResult.message, validationResult.severity);
               }
             }
           }
@@ -7405,6 +7477,40 @@ var AzurePipelinesTaskValidator = class {
       }
     }
     return -1;
+  }
+  addDiagnostic(diags, lineIndex, message, severity) {
+    const range = new vscode.Range(
+      new vscode.Position(lineIndex, 0),
+      new vscode.Position(lineIndex, 100)
+    );
+    diags.push({
+      range,
+      message,
+      severity,
+      source: this.diagnosticSource
+    });
+  }
+  validateRequiredInput(fullTaskName, requiredInputName, taskInputsInYaml, taskDefinition) {
+    var validationResult = null;
+    if (!taskInputsInYaml[requiredInputName]) {
+      const reqPropertyInputDefinition = taskDefinition.getInputDefinition(requiredInputName);
+      const visibleRule = reqPropertyInputDefinition?.visibleRule;
+      if (!!visibleRule) {
+        const isRuleSatisfied = AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml);
+        if (!isRuleSatisfied) {
+          validationResult = {
+            message: `Required input '${requiredInputName}' for task '${fullTaskName}' must satisfy the rule '${visibleRule}'`,
+            severity: vscode.DiagnosticSeverity.Error
+          };
+        }
+      } else {
+        validationResult = {
+          message: `Required input '${requiredInputName}' is missing for task '${fullTaskName}'`,
+          severity: vscode.DiagnosticSeverity.Error
+        };
+      }
+    }
+    return validationResult;
   }
 };
 
@@ -7447,7 +7553,7 @@ var TaskInfo = class {
   constructor(FullyQualifiedTaskName, RequiredInputs, AzurePipelinesTaskObj) {
     this.fullyQualifiedTaskName = FullyQualifiedTaskName;
     this.requiredInputsNames = RequiredInputs;
-    this.azurePipelineTaskObject = AzurePipelinesTaskObj;
+    this.azurePipelineTaskDefinition = AzurePipelinesTaskObj;
   }
 };
 
@@ -7479,7 +7585,11 @@ var GitHubTaskFetchService = class {
         });
         response.on("end", () => {
           try {
-            resolve(JSON.parse(data));
+            const azurePipelinesTaskDefinition = Object.assign(new AzurePipelinesTaskDefinition(JSON.parse(data)), JSON.parse(data));
+            const isinstance = azurePipelinesTaskDefinition instanceof AzurePipelinesTaskDefinition;
+            resolve(
+              azurePipelinesTaskDefinition
+            );
           } catch (error) {
             reject(error);
           }

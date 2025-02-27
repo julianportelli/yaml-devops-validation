@@ -109,7 +109,7 @@ export default class AzurePipelinesTaskValidator {
                                 taskInfo.azurePipelineTaskDefinition
                             );
                             if (validationResult) {
-                                const lineIndex = this.findLineForTask(document, fullTaskName);
+                                const lineIndex = this.findNextLineForTask(document, fullTaskName, diagnostics);
                                 if (lineIndex !== -1) {
                                     this.addDiagnostic(diagnostics, lineIndex, validationResult.message, validationResult.severity);
                                 }
@@ -117,7 +117,7 @@ export default class AzurePipelinesTaskValidator {
                         }
                     }
                     else{
-                        const lineIndex = this.findLineForTask(document, fullTaskName);
+                        const lineIndex = this.findNextLineForTask(document, fullTaskName, diagnostics);
                         if (lineIndex !== -1) {
                             this.addDiagnostic(diagnostics, lineIndex, `Unknown task: '${fullTaskName}' was not found in the task registry`, vscode.DiagnosticSeverity.Warning);
                         }
@@ -137,11 +137,15 @@ export default class AzurePipelinesTaskValidator {
         await traverseAndValidate(yamlContent);
     }
 
-    private findLineForTask(document: vscode.TextDocument, taskName: string): number {
+    private findNextLineForTask(document: vscode.TextDocument, taskName: string, diagnostics: vscode.Diagnostic[]): number {
         for (let i = 0; i < document.lineCount; i++) {
             const line = document.lineAt(i).text.trim();
             if (line.startsWith('- task:') && line.includes(taskName)) {
-                return i;
+                // Check if a diagnostic already exists for this line
+                const existingDiagnostic = diagnostics.find(d => d.range.start.line === i);
+                if (!existingDiagnostic) {
+                    return i;
+                }
             }
         }
         return -1;
@@ -155,7 +159,7 @@ export default class AzurePipelinesTaskValidator {
     ): void {
         const range = new vscode.Range(new vscode.Position(lineIndex, 0), new vscode.Position(lineIndex, 100));
         // Prevent duplicates by checking if the message already exists
-        if (!diags.some(d => d.message === message)) {
+        if (!diags.some(d => d.range.isEqual(range) && d.message === message)) {
             const diagnostic: vscode.Diagnostic = new vscode.Diagnostic(range, message, severity);
             diagnostic.source = this.extensionSource;
             diags.push(diagnostic);
@@ -176,7 +180,7 @@ export default class AzurePipelinesTaskValidator {
                 const isRuleSatisfied = AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml);
                 if (isRuleSatisfied) {
                     validationResult = {
-                        message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is required for task ${fullTaskName}`,
+                        message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is now required for task ${fullTaskName}`,
                         severity: vscode.DiagnosticSeverity.Error
                     };
                 }

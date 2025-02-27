@@ -6,24 +6,28 @@ import { GitHubTaskFetchService } from '../services/GitHubTaskFetchService';
 export class AzurePipelinesExtension {
     private validator: AzurePipelinesTaskValidator;
     private diagnosticCollection: vscode.DiagnosticCollection;
+    private context: vscode.ExtensionContext;
+    private static readonly EXTENSION_SOURCE = 'Azure Pipelines Task Validator';
 
     constructor(context: vscode.ExtensionContext) {
+        this.diagnosticCollection = vscode.languages.createDiagnosticCollection(AzurePipelinesExtension.EXTENSION_SOURCE); 
+        this.context = context;
         const cacheService = new VSCodeTaskCacheService(context);
         const fetchService = new GitHubTaskFetchService();
-        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('azure-pipelines');
-        this.validator = new AzurePipelinesTaskValidator(cacheService, fetchService);
+        this.validator = new AzurePipelinesTaskValidator(cacheService, fetchService, this.diagnosticCollection, AzurePipelinesExtension.EXTENSION_SOURCE);
     }
 
-    async activate(context: vscode.ExtensionContext) {
+    async activate() {
         await this.validator.initialize();
 
-        context.subscriptions.push(
+        // Validate existing open documents
+        vscode.workspace.textDocuments.forEach(this.validateYAMLDocument.bind(this));
+        
+        this.context.subscriptions.push(
             vscode.workspace.onDidOpenTextDocument(this.validateYAMLDocument.bind(this)),
             vscode.workspace.onDidSaveTextDocument(this.validateYAMLDocument.bind(this))
         );
 
-        // Validate existing open documents
-        vscode.workspace.textDocuments.forEach(this.validateYAMLDocument.bind(this));
     }
 
     private async validateYAMLDocument(document: vscode.TextDocument) {

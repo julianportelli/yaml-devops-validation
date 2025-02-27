@@ -24,6 +24,7 @@ export class VSCodeTaskCacheService implements TaskCacheService {
     }
 
     async saveTasks(tasks: Map<string, TaskInfo>): Promise<void> {
+        console.log('Saving tasks to cache');
         const tasksObject = Object.fromEntries(tasks);
         await this.context.globalState.update(this.CACHE_KEY, tasksObject);
         await this.context.globalState.update(this.CACHE_TIMESTAMP_KEY, Date.now());

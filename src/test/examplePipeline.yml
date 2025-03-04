@@ -20,6 +20,7 @@ stages:
           - task: NuGetCommand@2
             inputs:
                 # Missing required input 'solution'
+                # Since the rule 'command = restore' has been satisfied, the input 'solution' is now required for task NuGetCommand@2
                 command: 'restore'
                 restoreMode: 'verify'
 

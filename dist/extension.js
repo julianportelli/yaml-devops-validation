@@ -7343,41 +7343,82 @@ var AzurePipelinesTaskDefinition = class {
 
 // src/services/AdvancedVisibilityRuleParser.ts
 var AdvancedVisibilityRuleParser = class {
+  /**
+   * Parses a visibility rule string into a structured format for evaluation
+   * @param rule The rule string to parse (e.g., "command = install && type = npm || command = ci")
+   * @returns A nested array representing OR groups containing AND conditions
+   */
   static parseRule(rule) {
-    if (!rule) {
+    if (!rule || rule.trim() === "") {
       return [];
     }
-    ;
     const orGroups = rule.split("||").map((group) => group.trim());
     return orGroups.map((group) => {
-      const andConditions = group.split("&&").map((part) => part.trim());
+      const andConditions = group.split("&&").map((condition) => condition.trim());
       return andConditions.map((condition) => {
-        const [field, op, value] = condition.trim().split(" ");
+        const parts = condition.split(" ").filter((part) => part !== "");
+        if (parts.length !== 3) {
+          console.warn(`Invalid condition format: ${condition}`);
+          return { field: "", operator: "=", value: "" };
+        }
         return {
-          field: field.trim(),
-          operator: op,
-          value: value.trim()
+          field: parts[0],
+          operator: parts[1],
+          value: parts[2]
         };
       });
     });
   }
-  static evaluate(rule, values2) {
-    if (!rule) {
+  /**
+   * Evaluates a visibility rule against a set of input values
+   * @param rule The rule string to evaluate
+   * @param values The object containing field values to check against
+   * @returns True if the rule is satisfied, false otherwise
+   */
+  static evaluate(rule, values) {
+    if (!rule || rule.trim() === "") {
       return true;
+    }
+    if (!values || typeof values !== "object") {
+      return false;
     }
     const conditionGroups = this.parseRule(rule);
     return conditionGroups.some((andGroup) => {
       return andGroup.every((condition) => {
-        const actualValue = values2[condition.field];
-        return actualValue === condition.value;
+        if (!condition.field) {
+          return false;
+        }
+        const actualValue = values[condition.field];
+        if (condition.operator === "=" || condition.operator === "==") {
+          return actualValue === condition.value;
+        }
+        console.warn(`Unsupported operator: ${condition.operator}`);
+        return false;
       });
     });
   }
+  /**
+   * Validates if a rule string has correct syntax
+   * @param rule The rule string to validate
+   * @returns True if the rule has valid syntax, false otherwise
+   */
+  static isValidRule(rule) {
+    if (!rule || rule.trim() === "") {
+      return true;
+    }
+    try {
+      const conditionGroups = this.parseRule(rule);
+      return conditionGroups.every(
+        (andGroup) => andGroup.every(
+          (condition) => condition.field && condition.operator === "="
+        )
+      );
+    } catch (error) {
+      console.error(`Error validating rule: ${rule}`, error);
+      return false;
+    }
+  }
 };
-var complexRule = "command = install && type = npm || command = ci";
-var values = { command: "install", type: "npm" };
-var isVisible = AdvancedVisibilityRuleParser.evaluate(complexRule, values);
-console.log(isVisible);
 
 // src/core/AzurePipelinesValidator.ts
 var AzurePipelinesTaskValidator = class {
@@ -7395,138 +7436,146 @@ var AzurePipelinesTaskValidator = class {
     }
   }
   async validatePipelineContent(document) {
-    this.clearExtensionDiagnostics(document.uri);
+    this.diagnosticCollection.delete(document.uri);
     const diagnostics = [];
     try {
-      const yamlContent = document.getText();
-      const parsedYaml = yaml.parse(yamlContent);
+      const parsedYaml = yaml.parse(document.getText());
       await this.validatePipelineTasks(parsedYaml, diagnostics, document);
     } catch (error) {
-      const range = new vscode.Range(0, 0, 0, 1);
-      diagnostics.push(new vscode.Diagnostic(
-        range,
+      this.addDocumentDiagnostic(
+        diagnostics,
+        0,
         `Error encountered while parsing ${document.fileName}: ${error}`,
         vscode.DiagnosticSeverity.Error
-      ));
-      diagnostics[diagnostics.length - 1].source = this.extensionSource;
+      );
     }
     this.diagnosticCollection.set(document.uri, diagnostics);
     return diagnostics;
   }
-  clearExtensionDiagnostics(uri) {
-    this.diagnosticCollection.delete(uri);
-  }
   async getTaskInfo(taskName) {
-    let resultTaskInfo = void 0;
     let cachedTask = this.taskRegistryMap.get(taskName);
     if (cachedTask) {
-      resultTaskInfo = this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(cachedTask);
-    } else {
-      try {
-        const dirNameOfTask = taskName.replace("@", "V");
-        let taskInfoRetrievedViaHTTP = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
-        if (taskInfoRetrievedViaHTTP) {
-          taskInfoRetrievedViaHTTP = this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfoRetrievedViaHTTP);
-          this.taskRegistryMap.set(taskName, taskInfoRetrievedViaHTTP);
-          await this.taskCacheService.saveTasks(this.taskRegistryMap);
-          return taskInfoRetrievedViaHTTP;
-        }
-      } catch (error) {
-        console.error(`Error fetching task info for ${taskName}:`, error);
-      }
+      return this.normalizeTaskDefinition(cachedTask);
     }
-    return resultTaskInfo;
+    try {
+      const dirNameOfTask = taskName.replace("@", "V");
+      const taskInfo = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
+      if (taskInfo) {
+        const normalizedTask = this.normalizeTaskDefinition(taskInfo);
+        this.taskRegistryMap.set(taskName, normalizedTask);
+        await this.taskCacheService.saveTasks(this.taskRegistryMap);
+        return normalizedTask;
+      }
+    } catch (error) {
+      console.error(`Error fetching task info for ${taskName}:`, error);
+    }
+    return void 0;
   }
-  ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfo) {
+  normalizeTaskDefinition(taskInfo) {
     if (!(taskInfo.azurePipelineTaskDefinition instanceof AzurePipelinesTaskDefinition)) {
       taskInfo.azurePipelineTaskDefinition = new AzurePipelinesTaskDefinition(taskInfo.azurePipelineTaskDefinition);
     }
     return taskInfo;
   }
   async validatePipelineTasks(yamlContent, diagnostics, document) {
-    const traverseAndValidate = async (obj) => {
-      if (typeof obj !== "object" || obj === null) {
+    const processNode = async (obj, path = []) => {
+      if (!obj || typeof obj !== "object") {
         return;
       }
-      for (const [key, value] of Object.entries(obj)) {
-        if (key === "task") {
-          const fullTaskName = value;
-          const taskInputsInYaml = obj["inputs"] || {};
-          const taskInfo = await this.getTaskInfo(fullTaskName);
-          if (taskInfo) {
-            for (const requiredInputName of taskInfo.requiredInputsNames) {
-              const validationResult = this.validateRequiredInput(
-                fullTaskName,
-                requiredInputName,
-                taskInputsInYaml,
-                taskInfo.azurePipelineTaskDefinition
-              );
-              if (validationResult) {
-                const lineIndex = this.findNextLineForTask(document, fullTaskName, diagnostics);
-                if (lineIndex !== -1) {
-                  this.addDiagnostic(diagnostics, lineIndex, validationResult.message, validationResult.severity);
-                }
-              }
-            }
-          } else {
-            const lineIndex = this.findNextLineForTask(document, fullTaskName, diagnostics);
-            if (lineIndex !== -1) {
-              this.addDiagnostic(diagnostics, lineIndex, `Unknown task: '${fullTaskName}' was not found in the task registry`, vscode.DiagnosticSeverity.Warning);
-            }
-          }
+      if (obj.task) {
+        await this.validateTask(obj, diagnostics, document);
+      }
+      if (Array.isArray(obj)) {
+        for (let i = 0; i < obj.length; i++) {
+          await processNode(obj[i], [...path, i.toString()]);
         }
-        if (Array.isArray(value)) {
-          for (const item of value) {
-            await traverseAndValidate(item);
-          }
-        } else if (typeof value === "object") {
-          await traverseAndValidate(value);
-        }
+        return;
+      }
+      for (const key of Object.keys(obj)) {
+        await processNode(obj[key], [...path, key]);
       }
     };
-    await traverseAndValidate(yamlContent);
+    await processNode(yamlContent);
   }
-  findNextLineForTask(document, taskName, diagnostics) {
+  async validateTask(taskObj, diagnostics, document) {
+    const fullTaskName = taskObj.task;
+    const taskInputsInYaml = taskObj.inputs || {};
+    const lineIndex = this.findTaskLineInDocument(document, fullTaskName);
+    if (lineIndex === -1) {
+      return;
+    }
+    const taskInfo = await this.getTaskInfo(fullTaskName);
+    if (!taskInfo) {
+      this.addDiagnostic(
+        diagnostics,
+        lineIndex,
+        `Unknown task: '${fullTaskName}' was not found in the task registry`,
+        vscode.DiagnosticSeverity.Warning
+      );
+      return;
+    }
+    for (const requiredInputName of taskInfo.requiredInputsNames) {
+      const validationResult = this.validateRequiredInput(
+        fullTaskName,
+        requiredInputName,
+        taskInputsInYaml,
+        taskInfo.azurePipelineTaskDefinition
+      );
+      if (validationResult) {
+        this.addDiagnostic(
+          diagnostics,
+          lineIndex,
+          validationResult.message,
+          validationResult.severity
+        );
+      }
+    }
+  }
+  findTaskLineInDocument(document, taskName) {
+    const taskPattern = new RegExp(`- task:.*${taskName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
     for (let i = 0; i < document.lineCount; i++) {
-      const line = document.lineAt(i).text.trim();
-      if (line.startsWith("- task:") && line.includes(taskName)) {
-        const existingDiagnostic = diagnostics.find((d) => d.range.start.line === i);
-        if (!existingDiagnostic) {
-          return i;
-        }
+      const line = document.lineAt(i).text;
+      if (taskPattern.test(line)) {
+        return i;
       }
     }
     return -1;
   }
-  addDiagnostic(diags, lineIndex, message, severity) {
-    const range = new vscode.Range(new vscode.Position(lineIndex, 0), new vscode.Position(lineIndex, 100));
-    if (!diags.some((d) => d.range.isEqual(range) && d.message === message)) {
+  addDocumentDiagnostic(diagnostics, lineIndex, message, severity) {
+    const range = new vscode.Range(lineIndex, 0, lineIndex, 1);
+    const diagnostic = new vscode.Diagnostic(range, message, severity);
+    diagnostic.source = this.extensionSource;
+    diagnostics.push(diagnostic);
+  }
+  addDiagnostic(diagnostics, lineIndex, message, severity) {
+    const range = new vscode.Range(lineIndex, 0, lineIndex, 100);
+    const isDuplicate = diagnostics.some(
+      (d) => d.range.start.line === lineIndex && d.message === message
+    );
+    if (!isDuplicate) {
       const diagnostic = new vscode.Diagnostic(range, message, severity);
       diagnostic.source = this.extensionSource;
-      diags.push(diagnostic);
+      diagnostics.push(diagnostic);
     }
   }
   validateRequiredInput(fullTaskName, requiredInputName, taskInputsInYaml, taskDefinition) {
-    let validationResult = null;
-    if (!taskInputsInYaml[requiredInputName]) {
-      const reqPropertyInputDefinition = taskDefinition.getInputDefinition(requiredInputName);
-      const visibleRule = reqPropertyInputDefinition?.visibleRule;
-      if (visibleRule) {
-        const isRuleSatisfied = AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml);
-        if (isRuleSatisfied) {
-          validationResult = {
-            message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is now required for task ${fullTaskName}`,
-            severity: vscode.DiagnosticSeverity.Error
-          };
-        }
-      } else {
-        validationResult = {
-          message: `Required input '${requiredInputName}' is missing for task '${fullTaskName}'`,
-          severity: vscode.DiagnosticSeverity.Error
-        };
-      }
+    if (taskInputsInYaml[requiredInputName]) {
+      return null;
     }
-    return validationResult;
+    const inputDefinition = taskDefinition.getInputDefinition(requiredInputName);
+    const visibleRule = inputDefinition?.visibleRule;
+    if (visibleRule && AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml)) {
+      return {
+        message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is now required for task ${fullTaskName}`,
+        severity: vscode.DiagnosticSeverity.Error
+      };
+    } else if (!visibleRule) {
+      return {
+        message: `Required input '${requiredInputName}' is missing for task '${fullTaskName}'`,
+        severity: vscode.DiagnosticSeverity.Error
+      };
+    }
+    return null;
   }
 };
 

@@ -15,9 +15,9 @@ export default class AzurePipelinesTaskValidator {
     private taskRegistryMap: Map<string, TaskInfo> = new Map();
 
     constructor(
-        private taskCacheService: TaskCacheService,
-        private taskFetchService: TaskFetchService,
-        private diagnosticCollection: vscode.DiagnosticCollection,
+        private readonly taskCacheService: TaskCacheService,
+        private readonly taskFetchService: TaskFetchService,
+        private readonly diagnosticCollection: vscode.DiagnosticCollection,
         private readonly extensionSource: string
     ) {}
 
@@ -29,59 +29,51 @@ export default class AzurePipelinesTaskValidator {
     }
 
     async validatePipelineContent(document: vscode.TextDocument): Promise<vscode.Diagnostic[]> {
-        // Clear any diagnostics from our extension for this document
-        this.clearExtensionDiagnostics(document.uri);
-
+        this.diagnosticCollection.delete(document.uri);
+        
         const diagnostics: vscode.Diagnostic[] = [];
         try {
-            const yamlContent = document.getText();
-            const parsedYaml = yaml.parse(yamlContent);
+            const parsedYaml = yaml.parse(document.getText());
             await this.validatePipelineTasks(parsedYaml, diagnostics, document);
         } catch (error) {
-            // Create a diagnostic at the start of the document
-            const range = new vscode.Range(0, 0, 0, 1);
-            diagnostics.push(new vscode.Diagnostic(
-                range,
+            this.addDocumentDiagnostic(
+                diagnostics, 
+                0, 
                 `Error encountered while parsing ${document.fileName}: ${error}`,
                 vscode.DiagnosticSeverity.Error
-            ));
-            diagnostics[diagnostics.length - 1].source = this.extensionSource;
+            );
         }
 
-        // Update the DiagnosticCollection with our diagnostics
         this.diagnosticCollection.set(document.uri, diagnostics);
         return diagnostics;
     }
 
-    private clearExtensionDiagnostics(uri: vscode.Uri): void {
-        this.diagnosticCollection.delete(uri);
-    }
-
     private async getTaskInfo(taskName: string): Promise<TaskInfo | undefined> {
-        let resultTaskInfo: TaskInfo | undefined = undefined;
+        // Check cache first
         let cachedTask = this.taskRegistryMap.get(taskName);
-
         if (cachedTask) {
-            resultTaskInfo = this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(cachedTask);
-        } else {
-            try {
-                const dirNameOfTask = taskName.replace("@", "V");
-                let taskInfoRetrievedViaHTTP = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
-                if (taskInfoRetrievedViaHTTP) {
-                    taskInfoRetrievedViaHTTP =
-                        this.ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfoRetrievedViaHTTP);
-                    this.taskRegistryMap.set(taskName, taskInfoRetrievedViaHTTP);
-                    await this.taskCacheService.saveTasks(this.taskRegistryMap);
-                    return taskInfoRetrievedViaHTTP;
-                }
-            } catch (error) {
-                console.error(`Error fetching task info for ${taskName}:`, error);
-            }
+            return this.normalizeTaskDefinition(cachedTask);
         }
-        return resultTaskInfo;
+        
+        // Fetch from service if not in cache
+        try {
+            const dirNameOfTask = taskName.replace("@", "V");
+            const taskInfo = await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
+            
+            if (taskInfo) {
+                const normalizedTask = this.normalizeTaskDefinition(taskInfo);
+                this.taskRegistryMap.set(taskName, normalizedTask);
+                await this.taskCacheService.saveTasks(this.taskRegistryMap);
+                return normalizedTask;
+            }
+        } catch (error) {
+            console.error(`Error fetching task info for ${taskName}:`, error);
+        }
+        
+        return undefined;
     }
 
-    private ensureTaskDefinitionIsInstanceOfAzurePipelinesTaskDefinition(taskInfo: TaskInfo) {
+    private normalizeTaskDefinition(taskInfo: TaskInfo): TaskInfo {
         if (!(taskInfo.azurePipelineTaskDefinition instanceof AzurePipelinesTaskDefinition)) {
             taskInfo.azurePipelineTaskDefinition = new AzurePipelinesTaskDefinition(taskInfo.azurePipelineTaskDefinition);
         }
@@ -92,77 +84,122 @@ export default class AzurePipelinesTaskValidator {
         yamlContent: any,
         diagnostics: vscode.Diagnostic[],
         document: vscode.TextDocument
-    ) {
-        const traverseAndValidate = async (obj: any) => {
-            if (typeof obj !== 'object' || obj === null) { return; }
-            for (const [key, value] of Object.entries(obj)) {
-                if (key === 'task') {
-                    const fullTaskName = value as string;
-                    const taskInputsInYaml: TaskInputObjectType = obj['inputs'] || {};
-                    const taskInfo = await this.getTaskInfo(fullTaskName);
-                    if (taskInfo) {
-                        for (const requiredInputName of taskInfo.requiredInputsNames) {
-                            const validationResult = this.validateRequiredInput(
-                                fullTaskName,
-                                requiredInputName,
-                                taskInputsInYaml,
-                                taskInfo.azurePipelineTaskDefinition
-                            );
-                            if (validationResult) {
-                                const lineIndex = this.findNextLineForTask(document, fullTaskName, diagnostics);
-                                if (lineIndex !== -1) {
-                                    this.addDiagnostic(diagnostics, lineIndex, validationResult.message, validationResult.severity);
-                                }
-                            }
-                        }
-                    }
-                    else{
-                        const lineIndex = this.findNextLineForTask(document, fullTaskName, diagnostics);
-                        if (lineIndex !== -1) {
-                            this.addDiagnostic(diagnostics, lineIndex, `Unknown task: '${fullTaskName}' was not found in the task registry`, vscode.DiagnosticSeverity.Warning);
-                        }
-                    }
+    ): Promise<void> {
+        const processNode = async (obj: any, path: string[] = []): Promise<void> => {
+            if (!obj || typeof obj !== 'object') {
+                return;
+            }
+            
+            // Check if current object is a task
+            if (obj.task) {
+                await this.validateTask(obj, diagnostics, document);
+            }
+            
+            // Process arrays
+            if (Array.isArray(obj)) {
+                for (let i = 0; i < obj.length; i++) {
+                    await processNode(obj[i], [...path, i.toString()]);
                 }
-                // Recursively traverse nested objects and arrays
-                if (Array.isArray(value)) {
-                    for (const item of value) {
-                        await traverseAndValidate(item);
-                    }
-                } else if (typeof value === 'object') {
-                    await traverseAndValidate(value);
-                }
+                return;
+            }
+            
+            // Process object properties
+            for (const key of Object.keys(obj)) {
+                await processNode(obj[key], [...path, key]);
             }
         };
-
-        await traverseAndValidate(yamlContent);
+        
+        await processNode(yamlContent);
     }
-
-    private findNextLineForTask(document: vscode.TextDocument, taskName: string, diagnostics: vscode.Diagnostic[]): number {
-        for (let i = 0; i < document.lineCount; i++) {
-            const line = document.lineAt(i).text.trim();
-            if (line.startsWith('- task:') && line.includes(taskName)) {
-                // Check if a diagnostic already exists for this line
-                const existingDiagnostic = diagnostics.find(d => d.range.start.line === i);
-                if (!existingDiagnostic) {
-                    return i;
-                }
+    
+    private async validateTask(
+        taskObj: any, 
+        diagnostics: vscode.Diagnostic[], 
+        document: vscode.TextDocument
+    ): Promise<void> {
+        const fullTaskName = taskObj.task;
+        const taskInputsInYaml: TaskInputObjectType = taskObj.inputs || {};
+        const lineIndex = this.findTaskLineInDocument(document, fullTaskName);
+        
+        if (lineIndex === -1) {
+            return;
+        }
+        
+        const taskInfo = await this.getTaskInfo(fullTaskName);
+        
+        if (!taskInfo) {
+            this.addDiagnostic(
+                diagnostics,
+                lineIndex,
+                `Unknown task: '${fullTaskName}' was not found in the task registry`,
+                vscode.DiagnosticSeverity.Warning
+            );
+            return;
+        }
+        
+        // Validate required inputs
+        for (const requiredInputName of taskInfo.requiredInputsNames) {
+            const validationResult = this.validateRequiredInput(
+                fullTaskName,
+                requiredInputName,
+                taskInputsInYaml,
+                taskInfo.azurePipelineTaskDefinition
+            );
+            
+            if (validationResult) {
+                this.addDiagnostic(
+                    diagnostics,
+                    lineIndex,
+                    validationResult.message,
+                    validationResult.severity
+                );
             }
         }
+    }
+
+    private findTaskLineInDocument(document: vscode.TextDocument, taskName: string): number {
+        const taskPattern = new RegExp(`- task:.*${taskName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+        
+        for (let i = 0; i < document.lineCount; i++) {
+            const line = document.lineAt(i).text;
+            if (taskPattern.test(line)) {
+                return i;
+            }
+        }
+        
         return -1;
     }
 
-    private addDiagnostic(
-        diags: vscode.Diagnostic[],
+    private addDocumentDiagnostic(
+        diagnostics: vscode.Diagnostic[],
         lineIndex: number,
         message: string,
         severity: vscode.DiagnosticSeverity
     ): void {
-        const range = new vscode.Range(new vscode.Position(lineIndex, 0), new vscode.Position(lineIndex, 100));
-        // Prevent duplicates by checking if the message already exists
-        if (!diags.some(d => d.range.isEqual(range) && d.message === message)) {
-            const diagnostic: vscode.Diagnostic = new vscode.Diagnostic(range, message, severity);
+        const range = new vscode.Range(lineIndex, 0, lineIndex, 1);
+        const diagnostic = new vscode.Diagnostic(range, message, severity);
+        diagnostic.source = this.extensionSource;
+        diagnostics.push(diagnostic);
+    }
+
+    private addDiagnostic(
+        diagnostics: vscode.Diagnostic[],
+        lineIndex: number,
+        message: string,
+        severity: vscode.DiagnosticSeverity
+    ): void {
+        // Avoid adding duplicate diagnostics for the same line and message
+        const range = new vscode.Range(lineIndex, 0, lineIndex, 100);
+        
+        const isDuplicate = diagnostics.some(d => 
+            d.range.start.line === lineIndex && 
+            d.message === message
+        );
+        
+        if (!isDuplicate) {
+            const diagnostic = new vscode.Diagnostic(range, message, severity);
             diagnostic.source = this.extensionSource;
-            diags.push(diagnostic);
+            diagnostics.push(diagnostic);
         }
     }
 
@@ -172,25 +209,26 @@ export default class AzurePipelinesTaskValidator {
         taskInputsInYaml: TaskInputObjectType,
         taskDefinition: AzurePipelinesTaskDefinition
     ): Nullable<InputValidationResult> {
-        let validationResult: Nullable<InputValidationResult> = null;
-        if (!taskInputsInYaml[requiredInputName]) {
-            const reqPropertyInputDefinition = taskDefinition.getInputDefinition(requiredInputName);
-            const visibleRule = reqPropertyInputDefinition?.visibleRule;
-            if (visibleRule) {
-                const isRuleSatisfied = AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml);
-                if (isRuleSatisfied) {
-                    validationResult = {
-                        message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is now required for task ${fullTaskName}`,
-                        severity: vscode.DiagnosticSeverity.Error
-                    };
-                }
-            } else {
-                validationResult = {
-                    message: `Required input '${requiredInputName}' is missing for task '${fullTaskName}'`,
-                    severity: vscode.DiagnosticSeverity.Error
-                };
-            }
+        // Skip validation if input is provided
+        if (taskInputsInYaml[requiredInputName]) {
+            return null;
         }
-        return validationResult;
+        
+        const inputDefinition = taskDefinition.getInputDefinition(requiredInputName);
+        const visibleRule = inputDefinition?.visibleRule;
+        
+        if (visibleRule && AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml)) {
+            return {
+                message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is now required for task ${fullTaskName}`,
+                severity: vscode.DiagnosticSeverity.Error
+            };
+        } else if (!visibleRule) {
+            return {
+                message: `Required input '${requiredInputName}' is missing for task '${fullTaskName}'`,
+                severity: vscode.DiagnosticSeverity.Error
+            };
+        }
+        
+        return null;
     }
 }

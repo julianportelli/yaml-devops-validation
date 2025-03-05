@@ -1,8 +1,8 @@
 import * as https from "https";
-import { TaskInfo, TaskFetchService } from "../types";
+import { TaskInfo, ITaskFetchService } from "../types";
 import { AzurePipelinesTaskDefinition } from "../types/AzurePipelinesTaskDefinition";
 
-export class GitHubTaskFetchService implements TaskFetchService {
+export class GitHubTaskFetchService implements ITaskFetchService {
 	async fetchTaskInfo(taskDir: string): Promise<TaskInfo | undefined> {
 		const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
 

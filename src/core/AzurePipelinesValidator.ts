@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import {
-	TaskCacheService,
-	TaskFetchService,
+	ITaskCacheService,
+	ITaskFetchService,
 	type InputValidationResult,
 	type Nullable,
 	type TaskInfo,
@@ -18,8 +18,8 @@ export default class AzurePipelinesTaskValidator {
 	private taskRegistryMap: Map<string, TaskInfo> = new Map();
 
 	constructor(
-		private readonly taskCacheService: TaskCacheService,
-		private readonly taskFetchService: TaskFetchService,
+		private readonly taskCacheService: ITaskCacheService,
+		private readonly taskFetchService: ITaskFetchService,
 		private readonly diagnosticCollection: vscode.DiagnosticCollection,
 		private readonly extensionSource: string
 	) {}
@@ -95,7 +95,7 @@ export default class AzurePipelinesTaskValidator {
 	}
 
 	private async validatePipelineTasks(
-		yamlContent: any,
+		yamlContent: unknown,
 		diagnostics: vscode.Diagnostic[],
 		document: vscode.TextDocument
 	): Promise<void> {

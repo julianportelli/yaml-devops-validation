@@ -22,12 +22,12 @@ export class TaskInfo {
 	}
 }
 
-export interface TaskCacheService {
+export interface ITaskCacheService {
 	getCachedTasks(): Promise<Map<string, TaskInfo> | null>;
 	saveTasks(tasks: Map<string, TaskInfo>): Promise<void>;
 }
 
-export interface TaskFetchService {
+export interface ITaskFetchService {
 	fetchTaskInfo(taskDir: string): Promise<TaskInfo | undefined>;
 }
 

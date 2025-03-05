@@ -50,7 +50,7 @@ export class AzurePipelinesTaskDefinition {
 	execution: Execution;
 	messages: Record<string, string>;
 
-	constructor (data: any) {
+	constructor(data: any) {
 		this.id = data.id;
 		this.name = data.name;
 		this.friendlyName = data.friendlyName;
@@ -72,11 +72,11 @@ export class AzurePipelinesTaskDefinition {
 		this.messages = data.messages;
 	}
 
-	getInputDefinition (name: string): TaskInput | undefined {
+	getInputDefinition(name: string): TaskInput | undefined {
 		return this.inputs.find(input => input.name === name);
 	}
 
-	getFullVersionString (): string {
+	getFullVersionString(): string {
 		return `${this.version.Major}.${this.version.Minor}.${this.version.Patch}`;
 	}
 }

@@ -1,14 +1,25 @@
 {
-	"name": "yaml-devops-validation",
-	"displayName": "YAML DevOps Validation",
-	"description": "Validates Azure Pipelines tasks for required inputs",
-	"version": "0.1.0",
+	"name": "azure-pipelines-yaml-task-validator",
+	"displayName": "Azure Pipelines YAML Task validator",
+	"description": "A Visual Studio code extension that analyzes Azure Pipelines YAML files and validates task requirements and conditions.",
 	"publisher": "julianportelli",
+	"version": "0.1.0",
 	"engines": {
-		"vscode": "^1.95.0"
+		"vscode": "^1.96.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/julianportelli/yaml-devops-validation"
 	},
 	"categories": [
 		"Linters"
+	],
+	"keywords": [
+		"yaml",
+		"devops",
+		"azure",
+		"pipelines",
+		"tasks"
 	],
 	"activationEvents": [
 		"onLanguage:yaml"
@@ -27,19 +38,21 @@
 	},
 	"scripts": {
 		"preinstall": "npx only-allow pnpm",
-		"vscode:prepublish": "pnpm run compile && pnpm run package",
+		"vscode:prepublish": "pnpm run compile && pnpm run package-extension",
 		"compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
 		"watch": "npm-run-all -p watch:*",
 		"watch:esbuild": "node esbuild.js --watch",
 		"watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-		"package": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
 		"copy-fixtures": "ts-node src/scripts/copyTestFixtures.ts",
 		"compile-tests": "tsc -p . --outDir out && pnpm run copy-fixtures",
 		"watch-tests": "tsc -p . -w --outDir out",
 		"pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
 		"check-types": "tsc --noEmit",
 		"lint": "eslint src",
-		"test": "node ./out/test/runTest.js"
+		"test": "vscode-test --coverage true --color true --coverage-output ./out/coverage",
+		"test2": "node ./out/test/runTest.js",
+		"package-extension": "pnpm vsce package --no-dependencies",
+		"publish-extension": "pnpm vsce publish --no-dependencies"
 	},
 	"devDependencies": {
 		"@types/glob": "^8.1.0",
@@ -50,7 +63,7 @@
 		"@typescript-eslint/parser": "^8.18.1",
 		"@vscode/test-cli": "^0.0.10",
 		"@vscode/test-electron": "^2.4.1",
-		"esbuild": "^0.24.2",
+		"esbuild": "^0.25.0",
 		"eslint": "^9.17.0",
 		"glob": "^11.0.1",
 		"jest": "^29.7.0",

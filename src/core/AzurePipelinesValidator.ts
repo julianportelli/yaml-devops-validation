@@ -10,12 +10,11 @@ import {
 } from "../types";
 import {
 	AzurePipelinesTaskDefinition,
-	type TaskInput
 } from "../types/AzurePipelinesTaskDefinition";
 import { AdvancedVisibilityRuleParser } from "../services/AdvancedVisibilityRuleParser";
 
 export default class AzurePipelinesTaskValidator {
-	private taskRegistryMap: Map<string, TaskInfo> = new Map();
+    private taskRegistryMap: Map<string, TaskInfo> = new Map();
 
 	constructor(
 		private readonly taskCacheService: ITaskCacheService,

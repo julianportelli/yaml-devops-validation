@@ -26,8 +26,9 @@ A Visual Studio code extension that analyzes Azure Pipelines YAML files and vali
     ```sh
     pnpm install
     ```
-6. Install `@vscode/vsce` globally
+6. Install these packages globally
     ```sh
+    pnpm install -g typescript
     pnpm install -g @vscode/vsce
     ```
 
@@ -36,7 +37,7 @@ A Visual Studio code extension that analyzes Azure Pipelines YAML files and vali
 <br/>
 If you wish to use this extension on your copy of VS Code, you will need to package the extension, which will produce a `.vsix` file which allows this extension to be installed.
 To do this simply follow the steps as indicated below:
-1. Open a terminal and run the command `pnpm package`
+1. Open a terminal and run the command `pnpm package-extension`
 2. A `.vsix` file should be generated in the project directory. Verify that it's there an copy the file name
 3. Install the extension by running `code --install-extension <generated VSIX file name>.vsix` e.g. `code --install-extension azure-pipelines-yaml-task-validator-0.1.0.vsix`
 4. Done!

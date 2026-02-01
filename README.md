@@ -16,13 +16,20 @@ A Visual Studio code extension that analyzes Azure Pipelines YAML files and vali
     ```sh
     git clone https://github.com/your-username/azure-pipelines-yaml-task-validator.git
     ```
-2. Navigate to the project directory:
+2. Install [Node](https://nodejs.org)
+3. Install [PNPM](https://pnpm.io/)
+4. Navigate to the project directory:
     ```sh
     cd azure-pipelines-yaml-task-validator
     ```
-3. Install dependencies using `pnpm`:
+5. Install project dependencies using `pnpm`:
     ```sh
     pnpm install
+    ```
+6. Install these packages globally
+    ```sh
+    pnpm install -g typescript
+    pnpm install -g @vscode/vsce
     ```
 
 ## Usage
@@ -30,7 +37,7 @@ A Visual Studio code extension that analyzes Azure Pipelines YAML files and vali
 <br/>
 If you wish to use this extension on your copy of VS Code, you will need to package the extension, which will produce a `.vsix` file which allows this extension to be installed.
 To do this simply follow the steps as indicated below:
-1. Open a terminal and run the command `pnpm package`
+1. Open a terminal and run the command `pnpm package-extension`
 2. A `.vsix` file should be generated in the project directory. Verify that it's there an copy the file name
 3. Install the extension by running `code --install-extension <generated VSIX file name>.vsix` e.g. `code --install-extension azure-pipelines-yaml-task-validator-0.1.0.vsix`
 4. Done!
@@ -38,7 +45,6 @@ To do this simply follow the steps as indicated below:
 
 ## Development/Debugging
 
-1. Install [PNPM](https://pnpm.io/)
 1. Open the project in Visual Studio Code.
 2. **IMPORTANT** Install this extension: [`connor4312.esbuild-problem-matchers`](https://marketplace.visualstudio.com/items?itemName=connor4312.esbuild-problem-matchers)
 3. Open a terminal and run the command `pnpm install`

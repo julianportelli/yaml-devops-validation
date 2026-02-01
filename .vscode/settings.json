@@ -1,5 +1,24 @@
 // Place your settings in this file to overwrite default and user settings.
 {
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit"
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "eslint.validate": [
+        "typescript"
+    ],
+    "javascript.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces": false,
+    "typescript.format.insertSpaceAfterOpeningAndBeforeClosingEmptyBraces": false,
+    "javascript.format.insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": true,
+    "files.autoSave": "onFocusChange",
+    "javascript.format.placeOpenBraceOnNewLineForControlBlocks": false,
+    "javascript.format.placeOpenBraceOnNewLineForFunctions": false,
+    "javascript.format.semicolons": "insert",
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": false,
     "files.exclude": {
         "out": false, // set this to true to hide the "out" folder with the compiled JS files
         "dist": false // set this to true to hide the "dist" folder with the compiled JS files
@@ -7,15 +26,17 @@
     "search.exclude": {
         "out": true, // set this to false to include "out" folder in search results
         "dist": true, // set this to false to include "dist" folder in search results
-        "pnpm-lock.yaml": true, // Avoid polluting search results with lockfile content
+        "pnpm-lock.yaml": true // Avoid polluting search results with lockfile content
     },
     // Turn off tsc task auto detection since we have the necessary tasks as npm scripts
     "typescript.tsc.autoDetect": "off",
     // Ensure VSCode uses pnpm instead of npm
     "eslint.packageManager": "pnpm",
     "npm.packageManager": "pnpm",
-// For those using file-nesting, nest the new files. E.g.:
-    "explorer.fileNesting.patterns":{
-  "package.json": "pnpm-workspace.yaml, pnpm-lock.yaml"
-    }
+    // For those using file-nesting, nest the new files. E.g.:
+    "explorer.fileNesting.patterns": {
+        "package.json": "pnpm-workspace.yaml, pnpm-lock.yaml"
+    },
+    // "mochaExplorer.files": "src/test/**/*.test.ts",
+    // "mochaExplorer.require": "ts-node/register"
 }

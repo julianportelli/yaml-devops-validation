@@ -13,8 +13,14 @@ import {
 } from "../types/AzurePipelinesTaskDefinition";
 import { AdvancedVisibilityRuleParser } from "../services/AdvancedVisibilityRuleParser";
 
+interface FindTaskResult {
+	taskLineNumber: number,
+	taskDeclarationTextStartIndex: number,
+	taskDeclarationTextEndIndex: number,
+}
+
 export default class AzurePipelinesTaskValidator {
-    private taskRegistryMap: Map<string, TaskInfo> = new Map();
+	private taskRegistryMap: Map<string, TaskInfo> = new Map();
 
 	constructor(
 		private readonly taskCacheService: ITaskCacheService,
@@ -135,9 +141,9 @@ export default class AzurePipelinesTaskValidator {
 	): Promise<void> {
 		const fullTaskName = taskObj.task;
 		const taskInputsInYaml: TaskInputObjectType = taskObj.inputs || {};
-		const lineIndex = this.findTaskLineInDocument(document, fullTaskName);
+		const taskFindResult = this.findTaskInDocument(document, fullTaskName);
 
-		if (lineIndex === -1) {
+		if (taskFindResult === null) {
 			return;
 		}
 
@@ -146,9 +152,11 @@ export default class AzurePipelinesTaskValidator {
 		if (!taskInfo) {
 			this.addDiagnostic(
 				diagnostics,
-				lineIndex,
+				taskFindResult.taskLineNumber,
 				`Unknown task: '${fullTaskName}' was not found in the task registry`,
-				vscode.DiagnosticSeverity.Warning
+				vscode.DiagnosticSeverity.Warning,
+				taskFindResult.taskDeclarationTextStartIndex,
+				taskFindResult.taskDeclarationTextEndIndex,
 			);
 			return;
 		}
@@ -165,30 +173,38 @@ export default class AzurePipelinesTaskValidator {
 			if (validationResult) {
 				this.addDiagnostic(
 					diagnostics,
-					lineIndex,
+					taskFindResult.taskLineNumber,
 					validationResult.message,
-					validationResult.severity
+					validationResult.severity,
+					taskFindResult.taskDeclarationTextStartIndex,
+					taskFindResult.taskDeclarationTextEndIndex,
 				);
 			}
 		}
 	}
 
-	private findTaskLineInDocument(
+	private findTaskInDocument(
 		document: vscode.TextDocument,
 		taskName: string
-	): number {
+	): Nullable<FindTaskResult> {
 		const taskPattern = new RegExp(
 			`- task:.*${taskName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
 		);
 
-		for (let i = 0; i < document.lineCount; i++) {
-			const line = document.lineAt(i).text;
+		for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
+			const line = document.lineAt(lineIndex).text;
 			if (taskPattern.test(line)) {
-				return i;
+				const taskStartIndex = line.indexOf("- task:");
+				const taskEndIndex = line.length;
+				return {
+					taskLineNumber: lineIndex,
+					taskDeclarationTextStartIndex: taskStartIndex,
+					taskDeclarationTextEndIndex: taskEndIndex,
+				};
 			}
 		}
 
-		return -1;
+		return null;
 	}
 
 	private addDocumentDiagnostic(
@@ -207,10 +223,12 @@ export default class AzurePipelinesTaskValidator {
 		diagnostics: vscode.Diagnostic[],
 		lineIndex: number,
 		message: string,
-		severity: vscode.DiagnosticSeverity
+		severity: vscode.DiagnosticSeverity,
+		startColumnIndex?: number,
+		endColumnIndex?: number,
 	): void {
 		// Avoid adding duplicate diagnostics for the same line and message
-		const range = new vscode.Range(lineIndex, 0, lineIndex, 100);
+		const range = new vscode.Range(lineIndex, startColumnIndex ?? 0, lineIndex, endColumnIndex ?? 100);
 
 		const isDuplicate = diagnostics.some(
 			d => d.range.start.line === lineIndex && d.message === message

@@ -5,7 +5,7 @@
 	"publisher": "julianportelli",
 	"version": "0.1.0",
 	"engines": {
-		"vscode": "^1.96.0"
+		"vscode": "^1.109.0"
 	},
 	"repository": {
 		"type": "git",
@@ -54,26 +54,25 @@
 		"publish-extension": "vsce publish --no-dependencies"
 	},
 	"devDependencies": {
-		"@types/glob": "^8.1.0",
 		"@types/mocha": "^10.0.10",
-		"@types/node": "^22.10.2",
-		"@types/vscode": "^1.96.0",
-		"@typescript-eslint/eslint-plugin": "^8.54.0",
-		"@typescript-eslint/parser": "^8.54.0",
-		"@vscode/test-cli": "^0.0.10",
-		"@vscode/test-electron": "^2.4.1",
-		"esbuild": "^0.25.0",
-		"eslint": "^9.39.2",
+		"@types/node": "^25.2.3",
+		"@types/vscode": "^1.109.0",
+		"@typescript-eslint/eslint-plugin": "^8.55.0",
+		"@typescript-eslint/parser": "^8.55.0",
+		"@vscode/test-cli": "^0.0.12",
+		"@vscode/test-electron": "^2.5.2",
+		"esbuild": "^0.27.3",
+		"eslint": "^10.0.0",
 		"glob": "^13.0.2",
 		"jest": "^30.2.0",
 		"npm-run-all": "^4.1.5",
-		"prettier": "^3.5.3",
+		"prettier": "^3.8.1",
 		"ts-jest": "^29.4.6",
 		"ts-node": "^10.9.2",
-		"typescript": "^5.7.2"
+		"typescript": "^5.9.3"
 	},
 	"dependencies": {
-		"mocha": "^11.1.0",
-		"yaml": "^2.6.1"
+		"mocha": "^11.7.5",
+		"yaml": "^2.8.2"
 	}
 }

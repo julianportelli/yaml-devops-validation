@@ -38,6 +38,9 @@ export class AzurePipelinesExtension {
 			),
 			vscode.workspace.onDidSaveTextDocument(
 				this.validateYAMLDocument.bind(this)
+			),
+			vscode.workspace.onDidCloseTextDocument(
+				this.clearDiagnostics.bind(this)
 			)
 		);
 	}
@@ -53,6 +56,14 @@ export class AzurePipelinesExtension {
 		const diagnostics =
 			await this.validator.validatePipelineContent(document);
 		this.diagnosticCollection.set(document.uri, diagnostics);
+	}
+
+	private clearDiagnostics(document: vscode.TextDocument) {
+		if (!this.isAzurePipelinesYaml(document)) {
+			return;
+		}
+
+		this.diagnosticCollection.delete(document.uri);
 	}
 
 	private isAzurePipelinesYaml(document: vscode.TextDocument): boolean {

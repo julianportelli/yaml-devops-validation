@@ -8,7 +8,7 @@ export class AzurePipelinesExtension {
 	private diagnosticCollection: vscode.DiagnosticCollection;
 	private context: vscode.ExtensionContext;
 	private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
-	private static readonly EXTENSION_SOURCE = "Azure Pipelines Task Validator";
+	private static readonly EXTENSION_SOURCE = "Azure DevOps Pipelines Validator";
 	private static readonly VALIDATION_DELAY_MS = 1000;
 
 	constructor(context: vscode.ExtensionContext) {
@@ -21,7 +21,6 @@ export class AzurePipelinesExtension {
 		this.validator = new AzurePipelinesTaskValidator(
 			cacheService,
 			fetchService,
-			this.diagnosticCollection,
 			AzurePipelinesExtension.EXTENSION_SOURCE
 		);
 	}
@@ -54,6 +53,9 @@ export class AzurePipelinesExtension {
 		if (!this.isAzurePipelinesYaml(document)) {
 			return;
 		}
+
+		// Clear previous diagnostics
+		this.diagnosticCollection.delete(document.uri);
 
 		const diagnostics =
 			await this.validator.validatePipelineContent(document);

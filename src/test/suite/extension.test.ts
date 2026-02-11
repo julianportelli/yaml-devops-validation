@@ -12,7 +12,7 @@ suite("Extension Test Suite", () => {
 	// 	assert.ok(vscode.extensions.getExtension(extensionId));
 	// });
 
-	test("Should validate Azure Pipelines YAML", async () => {
+	test("Should validate Azure DevOps Pipelines YAML", async () => {
 		console.log(__dirname);
 		const docUri = vscode.Uri.file(
 			path.join(__dirname, "../fixtures/examplePipeline.yml")

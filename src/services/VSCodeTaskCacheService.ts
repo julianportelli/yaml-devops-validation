@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import { TaskInfo, ITaskCacheService } from "../types";
 
 export class VSCodeTaskCacheService implements ITaskCacheService {
-	private readonly CACHE_KEY = "azurePipelinesTaskCache";
-	private readonly CACHE_TIMESTAMP_KEY = "azurePipelinesTaskCacheTimestamp";
+	private readonly CACHE_KEY = "julianportelli.azureDevOpsPipelinesValidator.taskCache";
+	private readonly CACHE_TIMESTAMP_KEY = "julianportelli.azureDevOpsPipelinesValidator.taskCacheTimestamp";
 	private readonly CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
 	constructor(private context: vscode.ExtensionContext) {}

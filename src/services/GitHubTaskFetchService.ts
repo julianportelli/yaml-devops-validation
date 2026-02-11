@@ -3,7 +3,9 @@ import { TaskInfo, ITaskFetchService } from "../types";
 import { AzurePipelinesTaskDefinition } from "../types/AzurePipelinesTaskDefinition";
 
 export class GitHubTaskFetchService implements ITaskFetchService {
-	async fetchTaskInfo(taskDir: string): Promise<TaskInfo | undefined> {
+	async fetchTaskInfo(taskName: string): Promise<TaskInfo | undefined> {
+		const taskDir = taskName.replace("@", "V");
+
 		const taskJsonUrl = `https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/master/Tasks/${taskDir}/task.json`;
 
 		try {
@@ -19,13 +21,18 @@ export class GitHubTaskFetchService implements ITaskFetchService {
 			const taskInfo = new TaskInfo(
 				fullyQualifiedTaskName,
 				requiredInputsNames,
-				taskJson
+				taskJson,
+				true
 			);
 
 			return taskInfo;
 		} catch (error) {
 			console.error(`Error fetching task.json for ${taskDir}:`, error);
-			return undefined;
+
+			const fallbackTaskInfo = TaskInfo.createNonExistingTaskInfo(
+				taskName);
+
+			return fallbackTaskInfo;
 		}
 	}
 

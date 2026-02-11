@@ -26,7 +26,6 @@ export default class AzurePipelinesTaskValidator {
 	constructor(
 		private readonly taskCacheService: ITaskCacheService,
 		private readonly taskFetchService: ITaskFetchService,
-		private readonly diagnosticCollection: vscode.DiagnosticCollection,
 		private readonly extensionSource: string
 	) {}
 
@@ -67,9 +66,8 @@ export default class AzurePipelinesTaskValidator {
 
 		// Fetch from service if not in cache
 		try {
-			const dirNameOfTask = taskName.replace("@", "V");
 			const taskInfo =
-				await this.taskFetchService.fetchTaskInfo(dirNameOfTask);
+				await this.taskFetchService.fetchTaskInfo(taskName);
 
 			if (taskInfo) {
 				const normalizedTask = this.normalizeTaskDefinition(taskInfo);
@@ -152,11 +150,14 @@ export default class AzurePipelinesTaskValidator {
 
 		const taskInfo = await this.getTaskInfo(fullTaskName);
 
-		if (!taskInfo) {
+		if (!taskInfo || !taskInfo.existsInRegistry) {
+			const diagnosticMessage = !taskInfo ? `Task '${fullTaskName}' does not exist` : taskInfo.existsInRegistry === false ? `Task '${fullTaskName}' was not found in the task registry`
+				: `Unknown error retrieving task information for task ${fullTaskName}`;
+
 			this.addDiagnostic(
 				diagnostics,
 				taskFindResult.taskLineNumber,
-				`Unknown task: '${fullTaskName}' was not found in the task registry`,
+				diagnosticMessage,
 				vscode.DiagnosticSeverity.Warning,
 				taskFindResult.taskDeclarationTextStartIndex,
 				taskFindResult.taskDeclarationTextEndIndex,

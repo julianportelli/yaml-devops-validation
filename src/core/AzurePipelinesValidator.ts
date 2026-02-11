@@ -21,6 +21,7 @@ interface FindTaskResult {
 
 export default class AzurePipelinesTaskValidator {
 	private taskRegistryMap: Map<string, TaskInfo> = new Map();
+	private validatedLineNumbers: Set<number> = new Set();
 
 	constructor(
 		private readonly taskCacheService: ITaskCacheService,
@@ -40,6 +41,7 @@ export default class AzurePipelinesTaskValidator {
 		document: vscode.TextDocument
 	): Promise<vscode.Diagnostic[]> {
 		this.diagnosticCollection.delete(document.uri);
+		this.validatedLineNumbers.clear();
 
 		const diagnostics: vscode.Diagnostic[] = [];
 		try {
@@ -147,6 +149,9 @@ export default class AzurePipelinesTaskValidator {
 			return;
 		}
 
+		// Mark this line as validated
+		this.validatedLineNumbers.add(taskFindResult.taskLineNumber);
+
 		const taskInfo = await this.getTaskInfo(fullTaskName);
 
 		if (!taskInfo) {
@@ -185,13 +190,18 @@ export default class AzurePipelinesTaskValidator {
 
 	private findTaskInDocument(
 		document: vscode.TextDocument,
-		taskName: string
+		taskName: string,
 	): Nullable<FindTaskResult> {
 		const taskPattern = new RegExp(
 			`- task:.*${taskName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
 		);
 
 		for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
+			// Skip lines that have already been validated
+			if (this.validatedLineNumbers.has(lineIndex)) {
+				continue;
+			}
+
 			const line = document.lineAt(lineIndex).text;
 			if (taskPattern.test(line)) {
 				const taskStartIndex = line.indexOf("- task:");

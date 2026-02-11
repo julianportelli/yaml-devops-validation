@@ -1,7 +1,7 @@
 {
 	"name": "azure-pipelines-yaml-task-validator",
-	"displayName": "Azure Pipelines YAML Task validator",
-	"description": "A Visual Studio code extension that analyzes Azure Pipelines YAML files and validates task requirements and conditions.",
+	"displayName": "Azure DevOps Pipelines Validator",
+	"description": "A Visual Studio Code extension that analyzes Azure DevOps Pipelines YAML files and validates task requirements and conditions.",
 	"publisher": "julianportelli",
 	"version": "0.1.0",
 	"engines": {

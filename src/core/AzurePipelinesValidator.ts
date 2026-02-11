@@ -40,7 +40,6 @@ export default class AzurePipelinesTaskValidator {
 	async validatePipelineContent(
 		document: vscode.TextDocument
 	): Promise<vscode.Diagnostic[]> {
-		this.diagnosticCollection.delete(document.uri);
 		this.validatedLineNumbers.clear();
 
 		const diagnostics: vscode.Diagnostic[] = [];
@@ -56,7 +55,6 @@ export default class AzurePipelinesTaskValidator {
 			);
 		}
 
-		this.diagnosticCollection.set(document.uri, diagnostics);
 		return diagnostics;
 	}
 

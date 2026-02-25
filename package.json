@@ -39,12 +39,7 @@
 	"scripts": {
 		"preinstall": "npx only-allow pnpm",
 		"compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
-		"watch": "npm-run-all -p watch:*",
-		"watch:esbuild": "node esbuild.js --watch",
-		"watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-		"copy-fixtures": "ts-node src/scripts/copyTestFixtures.ts",
-		"compile-tests": "tsc -p . --outDir out && pnpm run copy-fixtures",
-		"watch-tests": "tsc -p . -w --outDir out",
+		"compile-tests": "tsc -p . --outDir out && pnpm run ts-node src/scripts/copyTestFixtures.ts",
 		"pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
 		"check-types": "tsc --noEmit",
 		"lint": "eslint src",
@@ -65,14 +60,13 @@
 		"eslint": "^10.0.2",
 		"glob": "^13.0.6",
 		"jest": "^30.2.0",
-		"npm-run-all": "^4.1.5",
 		"prettier": "^3.8.1",
 		"ts-jest": "^29.4.6",
 		"ts-node": "^10.9.2",
-		"typescript": "^5.9.3"
+		"typescript": "^5.9.3",
+		"mocha": "^11.7.5"
 	},
 	"dependencies": {
-		"mocha": "^11.7.5",
 		"yaml": "^2.8.2"
 	}
 }

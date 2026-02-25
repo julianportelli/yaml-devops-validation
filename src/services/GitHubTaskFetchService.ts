@@ -1,6 +1,6 @@
 import * as https from "https";
 import { TaskInfo, ITaskFetchService } from "../types";
-import { AzurePipelinesTaskDefinition } from "../types/AzurePipelinesTaskDefinition";
+import { AzurePipelinesTaskDefinition } from "../types/pipelineTask/AzurePipelinesTaskDefinition";
 
 export class GitHubTaskFetchService implements ITaskFetchService {
 	async fetchTaskInfo(taskName: string): Promise<TaskInfo | undefined> {

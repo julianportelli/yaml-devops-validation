@@ -2,6 +2,7 @@ import AzurePipelinesTaskValidator from "./AzurePipelinesValidator";
 import * as vscode from "vscode";
 import { VSCodeTaskCacheService } from "../services/VSCodeTaskCacheService";
 import { GitHubTaskFetchService } from "../services/GitHubTaskFetchService";
+import { AdvancedVisibilityRuleParserService } from "../services/AdvancedVisibilityRuleParserService";
 
 export class AzurePipelinesExtension {
 	private validator: AzurePipelinesTaskValidator;
@@ -9,6 +10,12 @@ export class AzurePipelinesExtension {
 	private context: vscode.ExtensionContext;
 	private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
 	private static readonly EXTENSION_SOURCE = "Azure DevOps Pipelines Validator";
+
+	/**
+	 * Delay in milliseconds before triggering validation.
+	 * Used to debounce validation requests and avoid excessive processing.
+	 * @type {number}
+	 */
 	private static readonly VALIDATION_DELAY_MS = 1000;
 
 	constructor(context: vscode.ExtensionContext) {
@@ -18,9 +25,11 @@ export class AzurePipelinesExtension {
 		this.context = context;
 		const cacheService = new VSCodeTaskCacheService(context);
 		const fetchService = new GitHubTaskFetchService();
+		const ruleParser = new AdvancedVisibilityRuleParserService();
 		this.validator = new AzurePipelinesTaskValidator(
 			cacheService,
 			fetchService,
+			ruleParser,
 			AzurePipelinesExtension.EXTENSION_SOURCE
 		);
 	}

@@ -1,17 +1,15 @@
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import {
+	IAdvancedVisibilityRuleParserService,
 	ITaskCacheService,
 	ITaskFetchService,
 	type InputValidationResult,
 	type Nullable,
 	type TaskInfo,
-	type TaskInputObjectType
-} from "../types";
-import {
+	type TaskInputObjectType,
 	AzurePipelinesTaskDefinition,
-} from "../types/AzurePipelinesTaskDefinition";
-import { AdvancedVisibilityRuleParser } from "../services/AdvancedVisibilityRuleParser";
+} from "../types";
 
 interface FindTaskResult {
 	taskLineNumber: number,
@@ -26,7 +24,8 @@ export default class AzurePipelinesTaskValidator {
 	constructor(
 		private readonly taskCacheService: ITaskCacheService,
 		private readonly taskFetchService: ITaskFetchService,
-		private readonly extensionSource: string
+		private readonly ruleParser: IAdvancedVisibilityRuleParserService,
+		private readonly extensionSource: string,
 	) {}
 
 	async initialize(): Promise<void> {
@@ -152,7 +151,7 @@ export default class AzurePipelinesTaskValidator {
 
 		if (!taskInfo || !taskInfo.existsInRegistry) {
 			const diagnosticMessage = !taskInfo ? `Task '${fullTaskName}' does not exist` : taskInfo.existsInRegistry === false ? `Task '${fullTaskName}' was not found in the task registry`
-				: `Unknown error retrieving task information for task ${fullTaskName}`;
+				: `Unknown error retrieving task information for task '${fullTaskName}'`;
 
 			this.addDiagnostic(
 				diagnostics,
@@ -267,10 +266,10 @@ export default class AzurePipelinesTaskValidator {
 
 		if (
 			visibleRule &&
-			AdvancedVisibilityRuleParser.evaluate(visibleRule, taskInputsInYaml)
+			this.ruleParser.evaluate(visibleRule, taskInputsInYaml)
 		) {
 			return {
-				message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is now required for task ${fullTaskName}`,
+				message: `Since the rule '${visibleRule}' has been satisfied, the input '${requiredInputName}' is now required for task '${fullTaskName}'`,
 				severity: vscode.DiagnosticSeverity.Error
 			};
 		} else if (!visibleRule) {

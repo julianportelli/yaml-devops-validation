@@ -1,20 +1,14 @@
-import { TaskInputObjectType, TaskInputObjectValueType } from "../types";
+import { ConditionOperator, TaskInputObjectType, RuleCondition, IAdvancedVisibilityRuleParserService } from "../types";
 
-type Operator = "=" | "==" | "||" | "&&";
+export class AdvancedVisibilityRuleParserService implements IAdvancedVisibilityRuleParserService {
+	constructor() {}
 
-interface Condition {
-	field: string;
-	operator: Operator;
-	value: TaskInputObjectValueType;
-}
-
-export class AdvancedVisibilityRuleParser {
 	/**
 	 * Parses a visibility rule string into a structured format for evaluation
 	 * @param rule The rule string to parse (e.g., "command = install && type = npm || command = ci")
 	 * @returns A nested array representing OR groups containing AND conditions
 	 */
-	static parseRule(rule: string): Condition[][] {
+	public parseRule(rule: string): RuleCondition[][] {
 		if (!rule || rule.trim() === "") {
 			return [];
 		}
@@ -34,12 +28,12 @@ export class AdvancedVisibilityRuleParser {
 
 				if (parts.length !== 3) {
 					console.warn(`Invalid condition format: ${condition}`);
-					return { field: "", operator: "=" as Operator, value: "" };
+					return { field: "", operator: "=" as ConditionOperator, value: "" };
 				}
 
 				return {
 					field: parts[0],
-					operator: parts[1] as Operator,
+					operator: parts[1] as ConditionOperator,
 					value: parts[2]
 				};
 			});
@@ -52,7 +46,7 @@ export class AdvancedVisibilityRuleParser {
 	 * @param values The object containing field values to check against
 	 * @returns True if the rule is satisfied, false otherwise
 	 */
-	static evaluate(rule: string, values: TaskInputObjectType): boolean {
+	public evaluate(rule: string, values: TaskInputObjectType): boolean {
 		if (!rule || rule.trim() === "") {
 			return true; // Empty rules are always satisfied
 		}
@@ -91,7 +85,7 @@ export class AdvancedVisibilityRuleParser {
 	 * @param rule The rule string to validate
 	 * @returns True if the rule has valid syntax, false otherwise
 	 */
-	static isValidRule(rule: string): boolean {
+	public isValidRule(rule: string): boolean {
 		if (!rule || rule.trim() === "") {
 			return true; // Empty rules are valid
 		}

@@ -1,33 +1,7 @@
-import type { Dictionary } from ".";
-
-// Types for nested objects
-export type Version = {
-	Major: number;
-	Minor: number;
-	Patch: number;
-};
-
-export type Group = {
-	name: string;
-	displayName: string;
-	isExpanded: boolean;
-};
-
-export type TaskInput = {
-	name: string;
-	aliases?: string[];
-	type: string;
-	label: string;
-	required: boolean;
-	defaultValue?: string;
-	visibleRule?: string;
-	helpMarkDown?: string;
-	options?: Record<string, string>;
-	properties?: Dictionary<string>;
-	groupName?: string;
-};
-
-export type Execution = Dictionary<Dictionary<string>>;
+import { Execution } from "./Execution";
+import { Group } from "./Group";
+import { TaskInput } from "./TaskInput";
+import { TaskVersion } from "./TaskVersion";
 
 export class AzurePipelinesTaskDefinition {
 	id: string;
@@ -42,7 +16,7 @@ export class AzurePipelinesTaskDefinition {
 	visibility: string[];
 	runsOn: string[];
 	minimumAgentVersion: string;
-	version: Version;
+	version: TaskVersion;
 	instanceNameFormat: string;
 	showEnvironmentVariables: boolean;
 	groups: Group[];

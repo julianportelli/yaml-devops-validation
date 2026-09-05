@@ -5,7 +5,7 @@
 	"publisher": "julianportelli",
 	"version": "0.1.0",
 	"engines": {
-		"vscode": "^1.109.0"
+		"vscode": "^1.136.0"
 	},
 	"repository": {
 		"type": "git",
@@ -61,6 +61,7 @@
 		"@typescript-eslint/parser": "^8.69.0",
 		"@vscode/test-cli": "^0.0.12",
 		"@vscode/test-electron": "^2.5.2",
+		"@vscode/vsce": "^3.9.2",
 		"esbuild": "^0.28.2",
 		"eslint": "^10.10.0",
 		"glob": "^13.0.6",

@@ -1,6 +1,8 @@
 allowBuilds:
   '@parcel/watcher': true
+  '@vscode/vsce-sign': true
   esbuild: true
+  keytar: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - eslint@10.10.0

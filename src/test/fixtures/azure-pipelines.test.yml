@@ -1,0 +1,269 @@
+trigger:
+  - main
+
+pr:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: Release
+  solution: '**/*.sln'
+  project: '**/*.csproj'
+  artifactName: 'drop'
+  appName: 'demo-app'
+
+stages:
+- stage: Build
+  displayName: Build and Validate
+  jobs:
+  - job: Job1
+    displayName: Validation Job
+    timeoutInMinutes: 120
+    steps:
+    - checkout: self
+
+    # -------------------------------------------------------
+    # Standard script tasks
+    # -------------------------------------------------------
+    - script: |
+        echo "Hello from script task"
+        pwd
+        ls -la
+      displayName: Script task valid
+
+    - bash: |
+        echo "Hello from bash task"
+        echo "Build configuration is $(buildConfiguration)"
+      displayName: Bash task valid
+
+    - task: Bash@3
+      displayName: Bash valid with required inputs
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo "This should pass validation"
+
+    - task: Bash@3
+      displayName: Bash intentionally missing required input
+      inputs:
+        # targetType intentionally omitted
+        script: |
+          echo "This should trigger a required input warning"
+
+    - task: PowerShell@2
+      displayName: PowerShell valid
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "PowerShell OK"
+
+    - task: PowerShell@2
+      displayName: PowerShell missing required input
+      inputs:
+        # targetType intentionally omitted
+        script: |
+          Write-Host "This should trigger a validation error"
+
+    - task: CmdLine@2
+      displayName: CmdLine valid
+      inputs:
+        script: |
+          echo "CmdLine task OK"
+          dir
+
+    # -------------------------------------------------------
+    # File operations / packaging
+    # -------------------------------------------------------
+    - task: CopyFiles@2
+      displayName: Copy files valid
+      inputs:
+        SourceFolder: '$(Build.SourcesDirectory)'
+        Contents: |
+          **/*.yml
+          **/*.json
+        TargetFolder: '$(Build.ArtifactStagingDirectory)/copy'
+
+    - task: CopyFiles@2
+      displayName: Copy files missing required input
+      inputs:
+        # SourceFolder intentionally missing
+        Contents: |
+          **/*.yml
+          **/*.json
+        TargetFolder: '$(Build.ArtifactStagingDirectory)/copy-missing'
+
+    - task: ArchiveFiles@2
+      displayName: Archive files valid
+      inputs:
+        rootFolderOrFile: '$(Build.SourcesDirectory)'
+        includeRootFolder: false
+        archiveType: 'tar'
+        tarCompression: 'gz'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/source.tar.gz'
+
+    - task: ExtractFiles@1
+      displayName: Extract files valid
+      inputs:
+        archiveFilePatterns: '$(Build.ArtifactStagingDirectory)/**/*.zip'
+        destinationFolder: '$(Build.ArtifactStagingDirectory)/extracted'
+        cleanDestinationFolder: true
+
+    - task: AzureResourceGroupDeployment@2
+      displayName: 'Azure Deployment:Create Azure Container Registry'
+      inputs:
+        azureSubscription: '$(Azure.ServiceConnectionId)'
+        resourceGroupName: '$(Azure.ResourceGroupName)'
+        location: '$(Azure.Location)'
+        templateLocation: 'URL of the file'
+        csmFileLink: 'https://raw.githubusercontent.com/Microsoft/azure-pipelines-yaml/master/templates/resources/arm/acr.json'
+        overrideParameters: '-registryName "$(ACR.Name)" -registryLocation "$(Azure.Location)"'
+
+    - task: PublishBuildArtifacts@1
+      displayName: Publish build artifacts valid
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+
+    - task: PublishPipelineArtifact@1
+      displayName: Publish pipeline artifact valid
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'pipeline-artifact'
+        publishLocation: 'pipeline'
+
+    # -------------------------------------------------------
+    # .NET / NuGet
+    # -------------------------------------------------------
+    - task: UseDotNet@2
+      displayName: Use .NET SDK valid
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'
+
+    - task: NuGetAuthenticate@1
+      displayName: NuGet authenticate valid
+
+    - task: NuGetCommand@2
+      displayName: NuGet restore valid
+      inputs:
+        command: 'restore'
+        restoreSolution: '$(solution)'
+
+    - task: DotNetCoreCLI@2
+      displayName: Build .NET app valid
+      inputs:
+        command: 'build'
+        projects: '$(project)'
+        arguments: '--configuration $(buildConfiguration)'
+
+    - task: DotNetCoreCLI@2
+      displayName: DotNetCoreCLI missing required input
+      inputs:
+        # command intentionally missing
+        projects: '$(project)'
+        arguments: '--configuration $(buildConfiguration)'
+
+    # -------------------------------------------------------
+    # Test / coverage
+    # -------------------------------------------------------
+    - task: PublishTestResults@2
+      displayName: Publish test results valid
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/TEST-*.xml'
+        failTaskOnFailedTests: true
+
+    - task: PublishCodeCoverageResults@2
+      displayName: Publish code coverage valid
+      inputs:
+        summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.xml'
+        pathToSources: '$(Build.SourcesDirectory)'
+
+    # -------------------------------------------------------
+    # Azure tasks
+    # -------------------------------------------------------
+    - task: AzureCLI@2
+      displayName: Azure CLI valid
+      inputs:
+        azureSubscription: 'MyServiceConnection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az account show
+          az group list --output table
+
+    - task: AzureCLI@2
+      displayName: Azure CLI missing required input
+      inputs:
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az account show
+          # azureSubscription intentionally missing
+
+    - task: DownloadSecureFile@1
+      displayName: Download secure file valid
+      inputs:
+        secureFile: 'cert.pfx'
+
+    - task: DownloadPipelineArtifact@2
+      displayName: Download pipeline artifact valid
+      inputs:
+        buildType: 'current'
+        artifactName: 'drop'
+        targetPath: '$(Pipeline.Workspace)/downloaded'
+
+    # -------------------------------------------------------
+    # Containers / deployment-related tasks
+    # -------------------------------------------------------
+    - task: Docker@2
+      displayName: Docker build valid
+      inputs:
+        command: 'build'
+        repository: 'demoapp'
+        Dockerfile: '**/Dockerfile'
+        tags: 'latest'
+
+    - task: Docker@2
+      displayName: Docker task missing required input
+      inputs:
+        command: 'build'
+        # repository intentionally missing
+        Dockerfile: '**/Dockerfile'
+        tags: 'latest'
+
+    - task: KubernetesManifest@1
+      displayName: Kubernetes manifest valid
+      inputs:
+        action: 'deploy'
+        kubernetesServiceConnection: 'my-k8s-connection'
+        manifests: 'kubernetes/*.yaml'
+        namespace: 'default'
+
+    # -------------------------------------------------------
+    # Conditional and dependency-heavy examples
+    # -------------------------------------------------------
+    - task: DownloadSecureFile@1
+      displayName: Secure file condition sample
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+      inputs:
+        secureFile: 'appsettings.production.json'
+
+    - task: Bash@3
+      displayName: Conditional bash only on main
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+      inputs:
+        targetType: 'inline'
+        script: |
+          echo "This runs only on main"
+
+    - task: PowerShell@2
+      displayName: PowerShell with dependency
+      dependsOn: Job1
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "This task is executed after earlier steps in the same job"

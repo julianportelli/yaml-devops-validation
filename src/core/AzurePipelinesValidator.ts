@@ -256,13 +256,28 @@ export default class AzurePipelinesTaskValidator {
 		taskInputsInYaml: TaskInputObjectType,
 		taskDefinition: AzurePipelinesTaskDefinition
 	): Nullable<InputValidationResult> {
-		// Skip validation if input is provided
-		if (taskInputsInYaml[requiredInputName]) {
+		const inputDefinition =
+			taskDefinition.getInputDefinition(requiredInputName);
+		const aliasNames = inputDefinition?.aliases ?? [];
+		const isInputProvided =
+			Object.keys(taskInputsInYaml).some(key =>
+				key === requiredInputName ||
+				key === inputDefinition?.name ||
+				aliasNames.includes(key)
+			) &&
+			Object.entries(taskInputsInYaml).some(([key, value]) =>
+				(key === requiredInputName ||
+					key === inputDefinition?.name ||
+					aliasNames.includes(key)) &&
+				value !== undefined &&
+				value !== null &&
+				value !== ""
+			);
+
+		if (isInputProvided) {
 			return null;
 		}
 
-		const inputDefinition =
-			taskDefinition.getInputDefinition(requiredInputName);
 		const visibleRule = inputDefinition?.visibleRule;
 
 		if (

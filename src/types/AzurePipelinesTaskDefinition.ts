@@ -73,7 +73,9 @@ export class AzurePipelinesTaskDefinition {
 	}
 
 	getInputDefinition(name: string): TaskInput | undefined {
-		return this.inputs.find(input => input.name === name);
+		return this.inputs.find(input =>
+			input.name === name || input.aliases?.includes(name)
+		);
 	}
 
 	getFullVersionString(): string {
